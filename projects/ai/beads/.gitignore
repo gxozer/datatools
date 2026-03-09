@@ -1,7 +1,0 @@
-
-# Dolt database files (added by bd init)
-__pycache__/
-.env/
-.idea/
-.dolt/
-*.db
