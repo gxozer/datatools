@@ -18,7 +18,8 @@ class HelloWorldApp:
         )
 
     def hello(self):
-        raise NotImplementedError("Implement in beads1-t7b")
+        from flask import jsonify
+        return jsonify({"message": "Hello, World!"})
 
     def run(self, **kwargs):
         self.app.run(**kwargs)
