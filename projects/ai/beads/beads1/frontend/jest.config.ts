@@ -7,6 +7,14 @@ const config: Config = {
   moduleNameMapper: {
     "\\.(css|less|scss|sass)$": "<rootDir>/__mocks__/fileMock.js",
   },
+  transform: {
+    "^.+\\.tsx?$": ["ts-jest", {
+      tsconfig: {
+        jsx: "react-jsx",
+        esModuleInterop: true,
+      },
+    }],
+  },
 };
 
 export default config;
