@@ -63,6 +63,6 @@ describe('App component', () => {
     render(<App />)
     await waitFor(() => screen.getByText('Hello, World!'))
     expect(global.fetch).toHaveBeenCalledTimes(1)
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:5000/api/hello')
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:5001/api/hello')
   })
 })

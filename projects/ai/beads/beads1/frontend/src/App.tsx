@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-const API_URL = 'http://localhost:5000/api/hello'
+const API_URL = 'http://localhost:5001/api/hello'
 
 class HelloService {
   async fetchMessage(): Promise<string> {

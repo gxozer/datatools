@@ -63,7 +63,10 @@ bdui start --open
 
 ```
 npm install -g beads-dashboard
+beads-dashboard
 ```
+
+http://localhost:3001
 
 
 ### Environment Setup

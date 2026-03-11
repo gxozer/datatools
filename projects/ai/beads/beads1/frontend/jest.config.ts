@@ -7,6 +7,7 @@ const config: Config = {
   moduleNameMapper: {
     "\\.(css|less|scss|sass)$": "<rootDir>/__mocks__/fileMock.js",
   },
+  testPathIgnorePatterns: ["/node_modules/", "/src/test/e2e/"],
   transform: {
     "^.+\\.tsx?$": ["ts-jest", {
       tsconfig: {
