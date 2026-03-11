@@ -2,7 +2,7 @@ import pytest
 from app import app as flask_app
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def app():
     flask_app.config["TESTING"] = True
     yield flask_app
