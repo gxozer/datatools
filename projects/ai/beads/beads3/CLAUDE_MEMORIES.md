@@ -1,5 +1,9 @@
 # Shared Memories
 
+## PR Reviews
+
+When reviewing a PR, always post review comments directly to the PR using `gh pr review <url> --comment --body "..."`. Do NOT only report findings in the chat.
+
 ## Beads
 
 ### Epic Parenting
