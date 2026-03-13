@@ -6,7 +6,6 @@ configurations (e.g. testing vs. production) without side effects at
 import time.
 """
 
-import os
 from flask import Flask
 from flask_cors import CORS
 from dotenv import load_dotenv
