@@ -10,4 +10,14 @@ export default defineConfig({
       '/api': 'http://localhost:5000',
     },
   },
+  test: {
+    // Use jsdom to simulate a browser environment for React component tests
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    globals: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+    },
+  },
 })
