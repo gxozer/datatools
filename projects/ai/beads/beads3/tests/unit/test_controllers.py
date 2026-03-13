@@ -7,16 +7,14 @@ flask.jsonify works, but without going through the HTTP stack.
 
 import json
 import pytest
-from app import create_app
 from app.controllers import HelloController, HealthController
 
 
 @pytest.fixture
-def app_context():
+def app_context(app):
     """Push a Flask application context so jsonify is available."""
-    flask_app = create_app()
-    with flask_app.app_context():
-        yield flask_app
+    with app.app_context():
+        yield app
 
 
 class TestHelloController:
