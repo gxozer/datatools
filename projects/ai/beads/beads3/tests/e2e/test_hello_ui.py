@@ -5,6 +5,7 @@ These tests start the Flask backend and the Vite frontend dev server,
 then drive a real Chromium browser to verify the full stack works together.
 """
 
+import os
 import subprocess
 import time
 import pytest
@@ -23,7 +24,7 @@ def backend_server():
         ["python", "run.py"],
         cwd="backend",
         env={
-            **__import__("os").environ,
+            **os.environ,
             "PORT": str(BACKEND_PORT),
             "FLASK_DEBUG": "false",
         },
