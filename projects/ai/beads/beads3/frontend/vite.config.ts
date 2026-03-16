@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     // Proxy /api requests to the Flask backend during development
     proxy: {
-      '/api': 'http://localhost:5000',
+      '/api': 'http://localhost:5001',
     },
   },
   test: {

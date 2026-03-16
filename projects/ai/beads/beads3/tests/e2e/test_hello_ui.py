@@ -7,6 +7,7 @@ then drive a real Chromium browser to verify the full stack works together.
 
 import os
 import subprocess
+import sys
 import time
 import pytest
 from playwright.sync_api import Page, expect
@@ -21,7 +22,7 @@ FRONTEND_PORT = 5174  # Vite uses 5173 by default; use 5174 as fallback
 def backend_server():
     """Start the Flask backend for the duration of the E2E test session."""
     proc = subprocess.Popen(
-        ["python", "run.py"],
+        [sys.executable, "run.py"],
         cwd="backend",
         env={
             **os.environ,
