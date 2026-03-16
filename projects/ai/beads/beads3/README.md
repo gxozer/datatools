@@ -77,7 +77,7 @@ Open two terminals from the `beads3/` directory:
 cd backend
 source .venv/bin/activate
 python run.py
-# Flask running on http://localhost:5000
+# Flask running on http://localhost:5001
 ```
 
 **Terminal 2 — Frontend:**
