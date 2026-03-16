@@ -22,7 +22,7 @@ HelloController → Response
 
 - The React frontend fetches `GET /api/hello` on page load via `ApiClient`
 - Flask serves the response from `HelloController`
-- In development, Vite proxies `/api/*` requests to `localhost:5000`
+- In development, Vite proxies `/api/*` requests to `localhost:5001`
 
 ---
 
