@@ -433,7 +433,7 @@ New file: `tests/e2e/test_auth_ui.py`
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `5000` | Flask listen port |
+| `PORT` | `5001` | Flask listen port |
 | `FLASK_DEBUG` | `false` | Enable Flask debug/reloader |
 | `JWT_SECRET` | — | **Required.** Secret key for signing JWTs |
 | `DATABASE_URL` | `sqlite:///app.db` | SQLAlchemy / Alembic database URI |

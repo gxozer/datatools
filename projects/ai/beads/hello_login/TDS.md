@@ -292,7 +292,7 @@ npm run dev            # starts on localhost:5173, proxies /api → :5001
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `5000` | Flask listen port |
+| `PORT` | `5001` | Flask listen port |
 | `FLASK_DEBUG` | `false` | Enable Flask debug/reloader |
 
 ---

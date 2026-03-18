@@ -38,6 +38,9 @@ class AppFactory:
         )
         app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
+        # Auth config
+        app.config["JWT_SECRET"] = os.environ.get("JWT_SECRET", "")
+
         # Initialise extensions
         db.init_app(app)
 

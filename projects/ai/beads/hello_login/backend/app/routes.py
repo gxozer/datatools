@@ -11,23 +11,26 @@ from .controllers import HelloController, HealthController
 
 
 class Router:
-    blueprint = Blueprint("api", __name__)
-
-    # GET /api/hello — returns the Hello World message
-    blueprint.add_url_rule(
-        "/hello",
-        view_func=HelloController.hello,
-        methods=["GET"],
-    )
-
-    # GET /api/health — returns service health status
-    blueprint.add_url_rule(
-        "/health",
-        view_func=HealthController.health,
-        methods=["GET"],
-    )
-
     @staticmethod
     def register(app):
-        """Register the API blueprint under the /api prefix."""
-        app.register_blueprint(Router.blueprint, url_prefix="/api")
+        """
+        Create the API blueprint, bind all URL rules, and register it
+        under the /api prefix. Called once from AppFactory.create().
+        """
+        blueprint = Blueprint("api", __name__)
+
+        # GET /api/hello — returns the Hello World message
+        blueprint.add_url_rule(
+            "/hello",
+            view_func=HelloController.hello,
+            methods=["GET"],
+        )
+
+        # GET /api/health — returns service health status
+        blueprint.add_url_rule(
+            "/health",
+            view_func=HealthController.health,
+            methods=["GET"],
+        )
+
+        app.register_blueprint(blueprint, url_prefix="/api")

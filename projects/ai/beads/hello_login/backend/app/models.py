@@ -21,7 +21,7 @@ class User(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now, onupdate=_now)
 
-    reset_tokens = db.relationship("PasswordResetToken", back_populates="user", lazy="dynamic")
+    reset_tokens = db.relationship("PasswordResetToken", back_populates="user", lazy="select")
 
 
 class LoginAttempt(db.Model):

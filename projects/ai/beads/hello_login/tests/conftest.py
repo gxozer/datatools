@@ -11,6 +11,7 @@ def app():
     """Create a Flask app instance configured for testing."""
     flask_app = create_app()
     flask_app.config["TESTING"] = True
+    flask_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     return flask_app
 
 

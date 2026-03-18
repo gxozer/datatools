@@ -61,6 +61,21 @@ class TestUserModel:
         db_session.commit()
         assert isinstance(user.updated_at, datetime)
 
+    def test_user_updated_at_changes_on_update(self, db_session):
+        """updated_at is refreshed when a User record is modified."""
+        from app.models import User
+        import time
+        user = User(full_name="Jane", email="jane4b@example.com", hashed_password="x")
+        db_session.add(user)
+        db_session.commit()
+        original_updated_at = user.updated_at
+        # Small delay so the new timestamp is strictly greater
+        time.sleep(0.01)
+        user.full_name = "Jane Updated"
+        db_session.commit()
+        db_session.refresh(user)
+        assert user.updated_at > original_updated_at
+
     def test_user_full_name_is_required(self, db_session):
         """full_name cannot be null."""
         from app.models import User
