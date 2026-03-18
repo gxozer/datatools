@@ -1,0 +1,6 @@
+flask==3.1.0
+flask-cors==5.0.0
+flask-sqlalchemy==3.1.1
+sqlalchemy==2.0.48
+alembic==1.18.4
+python-dotenv==1.0.1
