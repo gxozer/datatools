@@ -92,3 +92,21 @@
 {"actor":"Gokhan","comment":null,"created_at":"2026-03-17T09:29:49Z","event_type":"status_changed","id":93,"issue_id":"beads3-hj6","new_value":"{\"status\":\"in_progress\"}","old_value":"{\"id\":\"beads3-hj6\",\"title\":\"Write TDS for login functionality\",\"description\":\"Document the technical design for the login feature. Should cover: auth approach (session vs token/JWT), backend changes (new endpoint, middleware, credential storage), frontend changes (login form component, auth state, route guarding), and test strategy.\",\"status\":\"open\",\"priority\":1,\"issue_type\":\"task\",\"owner\":\"gxozer@hotmail.com\",\"created_at\":\"2026-03-16T22:45:24Z\",\"created_by\":\"Gokhan\",\"updated_at\":\"2026-03-16T22:45:24Z\"}"}
 {"actor":"Gokhan","comment":null,"created_at":"2026-03-17T09:50:35Z","event_type":"closed","id":94,"issue_id":"beads3-hj6","new_value":"TDS_login.md written at project root — covers updated architecture, DB schema, JWT auth, all new controllers/pages, test strategy, and 6 key design decisions","old_value":""}
 {"actor":"Gokhan","comment":null,"created_at":"2026-03-17T16:59:25Z","event_type":"created","id":95,"issue_id":"beads3-h8o","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T16:59:28Z","event_type":"created","id":96,"issue_id":"beads3-3ok","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T16:59:33Z","event_type":"created","id":97,"issue_id":"beads3-aiv","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T16:59:35Z","event_type":"created","id":98,"issue_id":"beads3-6ij","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T16:59:38Z","event_type":"created","id":99,"issue_id":"beads3-5cq","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T16:59:45Z","event_type":"created","id":100,"issue_id":"beads3-7v5","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T16:59:47Z","event_type":"created","id":101,"issue_id":"beads3-9td","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T16:59:50Z","event_type":"created","id":102,"issue_id":"beads3-o00","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T16:59:59Z","event_type":"created","id":103,"issue_id":"beads3-7bi","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T17:00:03Z","event_type":"created","id":104,"issue_id":"beads3-tx5","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T17:00:07Z","event_type":"created","id":105,"issue_id":"beads3-bta","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T17:00:11Z","event_type":"created","id":106,"issue_id":"beads3-cs5","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T17:00:12Z","event_type":"created","id":107,"issue_id":"beads3-a42","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T17:00:15Z","event_type":"created","id":108,"issue_id":"beads3-kde","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T17:00:16Z","event_type":"created","id":109,"issue_id":"beads3-u9c","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T17:00:21Z","event_type":"created","id":110,"issue_id":"beads3-1xq","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T17:00:31Z","event_type":"created","id":111,"issue_id":"beads3-9de","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T17:00:32Z","event_type":"created","id":112,"issue_id":"beads3-9qx","new_value":"","old_value":""}
+{"actor":"Gokhan","comment":null,"created_at":"2026-03-17T17:00:33Z","event_type":"created","id":113,"issue_id":"beads3-da1","new_value":"","old_value":""}
