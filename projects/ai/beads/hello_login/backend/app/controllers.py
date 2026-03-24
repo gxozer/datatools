@@ -8,7 +8,6 @@ independently testable without a running Flask context.
 
 from flask import jsonify
 
-
 class HelloController:
     """Handles requests for the /api/hello endpoint."""
 

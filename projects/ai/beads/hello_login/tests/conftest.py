@@ -12,6 +12,7 @@ def app():
     flask_app = create_app()
     flask_app.config["TESTING"] = True
     flask_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    flask_app.config["JWT_SECRET"] = "test-secret"
     return flask_app
 
 
@@ -27,6 +28,7 @@ def db_app():
     flask_app = create_app()
     flask_app.config["TESTING"] = True
     flask_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    flask_app.config["JWT_SECRET"] = "test-secret"
     return flask_app
 
 
