@@ -133,6 +133,26 @@ class TestGenerateToken:
 # Tests: require_auth decorator
 # ---------------------------------------------------------------------------
 
+@pytest.fixture
+def authed_client(app):
+    """
+    Flask test client with a dedicated protected route registered for
+    testing the require_auth decorator in isolation.
+
+    Uses /api/test-auth instead of /api/hello so decorator tests are
+    decoupled from HelloController's own auth behaviour (beads3-9td).
+    """
+    from flask import jsonify
+    from app.auth import Auth
+
+    @app.route("/api/test-auth")
+    @Auth.require_auth
+    def _protected():
+        return jsonify({"status": "ok"})
+
+    return app.test_client()
+
+
 class TestRequireAuth:
     """Tests for the @require_auth decorator."""
 
@@ -144,7 +164,7 @@ class TestRequireAuth:
     def _expired_token(self, app):
         """Generate an already-expired JWT."""
         payload = {
-            "sub": 1,
+            "sub": "1",
             "email": "test@example.com",
             "full_name": "Test User",
             "role": "user",
@@ -152,63 +172,61 @@ class TestRequireAuth:
         }
         return pyjwt.encode(payload, app.config["JWT_SECRET"], algorithm="HS256")
 
-    def test_valid_token_passes(self, client, app):
+    def test_valid_token_passes(self, authed_client, app):
         """A request with a valid Bearer token should reach the protected view."""
         with app.app_context():
             token = self._valid_token(app)
-        response = client.get(
-            "/api/hello",
+        response = authed_client.get(
+            "/api/test-auth",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 200
 
-    def test_missing_auth_header_returns_401(self, client):
+    def test_missing_auth_header_returns_401(self, authed_client):
         """A request with no Authorization header should return 401."""
-        response = client.get("/api/hello")
+        response = authed_client.get("/api/test-auth")
         assert response.status_code == 401
 
-    def test_missing_auth_header_error_body(self, client):
+    def test_missing_auth_header_error_body(self, authed_client):
         """401 response should include status: error."""
-        response = client.get("/api/hello")
+        response = authed_client.get("/api/test-auth")
         data = json.loads(response.get_data(as_text=True))
         assert data["status"] == "error"
 
-    def test_invalid_token_returns_401(self, client):
+    def test_invalid_token_returns_401(self, authed_client):
         """A request with a malformed/invalid token should return 401."""
-        response = client.get(
-            "/api/hello",
+        response = authed_client.get(
+            "/api/test-auth",
             headers={"Authorization": "Bearer this.is.not.a.valid.jwt"},
         )
         assert response.status_code == 401
 
-    def test_expired_token_returns_401(self, client, app):
+    def test_expired_token_returns_401(self, authed_client, app):
         """A request with an expired token should return 401."""
         with app.app_context():
             token = self._expired_token(app)
-        response = client.get(
-            "/api/hello",
+        response = authed_client.get(
+            "/api/test-auth",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 401
 
-    def test_wrong_scheme_returns_401(self, client, app):
+    def test_wrong_scheme_returns_401(self, authed_client, app):
         """Authorization header with wrong scheme (Basic) should return 401."""
         with app.app_context():
             token = self._valid_token(app)
-        response = client.get(
-            "/api/hello",
+        response = authed_client.get(
+            "/api/test-auth",
             headers={"Authorization": f"Basic {token}"},
         )
         assert response.status_code == 401
 
-    def test_valid_token_sets_current_user(self, client, app):
+    def test_valid_token_sets_current_user(self, authed_client, app):
         """A valid token should make g.current_user available in the view."""
         with app.app_context():
             token = self._valid_token(app)
-        response = client.get(
-            "/api/hello",
+        response = authed_client.get(
+            "/api/test-auth",
             headers={"Authorization": f"Bearer {token}"},
         )
-        # HelloController will be updated to use g.current_user["full_name"]
-        # For now just check the response is 200 (current_user is accessible)
         assert response.status_code == 200

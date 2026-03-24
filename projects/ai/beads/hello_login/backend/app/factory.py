@@ -17,12 +17,17 @@ from .routes import Router
 
 class AppFactory:
     @staticmethod
-    def create() -> Flask:
+    def create(test_config: dict | None = None) -> Flask:
         """
         Create and configure the Flask application.
 
         Loads environment variables from a .env file (if present), registers
         blueprints, and enables CORS for the React dev server.
+
+        Args:
+            test_config: Optional dict of config overrides for testing.
+                         When provided, JWT_SECRET validation is skipped if
+                         TESTING is True in the supplied config.
 
         Returns:
             Flask: The configured Flask application instance.
@@ -32,14 +37,25 @@ class AppFactory:
 
         app = Flask(__name__)
 
+        # Apply test overrides first so TESTING flag is available below
+        if test_config:
+            app.config.update(test_config)
+
         # Database config — schema is managed by Alembic, not create_all()
-        app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-            "DATABASE_URL", "sqlite:///app.db"
+        app.config.setdefault(
+            "SQLALCHEMY_DATABASE_URI",
+            os.environ.get("DATABASE_URL", "sqlite:///app.db"),
         )
         app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-        # Auth config
-        app.config["JWT_SECRET"] = os.environ.get("JWT_SECRET", "")
+        # Auth config — JWT_SECRET is required in non-test environments
+        jwt_secret = app.config.get("JWT_SECRET") or os.environ.get("JWT_SECRET", "")
+        if not jwt_secret and not app.config.get("TESTING"):
+            raise RuntimeError(
+                "JWT_SECRET environment variable must be set. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        app.config["JWT_SECRET"] = jwt_secret
 
         # Initialise extensions
         db.init_app(app)
