@@ -20,6 +20,7 @@ class Router:
         blueprint = Blueprint("api", __name__)
 
         # GET /api/hello — returns the Hello World message
+        # Note: auth protection is added in beads3-9td (HelloController update)
         blueprint.add_url_rule(
             "/hello",
             view_func=HelloController.hello,
