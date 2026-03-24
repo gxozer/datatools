@@ -3,6 +3,9 @@
 .dolt/
 *.db
 
+# Beads backup (may contain secrets like API tokens)
+.beads/backup/
+
 # Python
 backend/.venv/
 __pycache__/
