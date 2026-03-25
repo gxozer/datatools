@@ -6,7 +6,7 @@ Keeping controllers separate from route registration makes them
 independently testable without a running Flask context.
 """
 
-from flask import jsonify
+from flask import g, jsonify
 
 class HelloController:
     """Handles requests for the /api/hello endpoint."""
@@ -14,12 +14,16 @@ class HelloController:
     @staticmethod
     def hello():
         """
-        Return a Hello World JSON response.
+        Return a personalised greeting for the authenticated user.
+
+        Requires g.current_user to be set by the require_auth decorator
+        applied at route registration.
 
         Returns:
-            Response: JSON payload with a message and status field.
+            Response: JSON payload with a personalised message and status field.
         """
-        return jsonify({"message": "Hello, World!", "status": "ok"})
+        name = g.current_user["full_name"]
+        return jsonify({"message": f"Hello, {name}!", "status": "ok"})
 
 
 class HealthController:

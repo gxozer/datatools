@@ -7,6 +7,7 @@ from the factory to wire all routes under the /api prefix.
 """
 
 from flask import Blueprint
+from .auth import Auth
 from .auth_controllers import LoginController
 from .controllers import HelloController, HealthController
 
@@ -20,11 +21,10 @@ class Router:
         """
         blueprint = Blueprint("api", __name__)
 
-        # GET /api/hello — returns the Hello World message
-        # Note: auth protection is added in beads3-9td (HelloController update)
+        # GET /api/hello — returns personalised greeting for authenticated users
         blueprint.add_url_rule(
             "/hello",
-            view_func=HelloController.hello,
+            view_func=Auth.require_auth(HelloController.hello),
             methods=["GET"],
         )
 
