@@ -29,6 +29,7 @@ class LoginAttempt(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     email = db.Column(db.String(255), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
     attempted_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
     success = db.Column(db.Boolean, nullable=False)
 

@@ -98,9 +98,11 @@ class TestLoginEndpoint:
     def test_locked_after_5_failures_returns_429(self, app, db_client, existing_user):
         """Account should be locked after 5 failed attempts within 15 minutes."""
         with app.app_context():
+            user = db.session.query(User).filter_by(email=existing_user["email"]).first()
             for _ in range(5):
                 attempt = LoginAttempt(
                     email=existing_user["email"],
+                    user_id=user.id if user else None,
                     success=False,
                     attempted_at=datetime.now(timezone.utc) - timedelta(minutes=1),
                 )

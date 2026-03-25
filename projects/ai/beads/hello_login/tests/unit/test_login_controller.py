@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 
+from app.auth_controllers import LoginController
 from app.database import db
 from app.models import User, LoginAttempt
 
@@ -47,9 +48,12 @@ def _create_user(session, email="user@example.com", password="password1", full_n
 
 def _add_failed_attempts(session, email, count, minutes_ago=1):
     """Add `count` failed login attempts for the given email."""
+    user = session.query(User).filter_by(email=email).first()
+    user_id = user.id if user else None
     for _ in range(count):
         attempt = LoginAttempt(
             email=email,
+            user_id=user_id,
             success=False,
             attempted_at=datetime.now(timezone.utc) - timedelta(minutes=minutes_ago),
         )
@@ -66,7 +70,6 @@ class TestLoginControllerUnit:
 
     def test_valid_credentials_returns_200(self, app, db_session):
         """Valid email and password should return 200."""
-        from app.auth_controllers import LoginController
         _create_user(db_session)
         with app.test_request_context(
             "/api/login", method="POST",
@@ -77,7 +80,6 @@ class TestLoginControllerUnit:
 
     def test_valid_credentials_returns_token(self, app, db_session):
         """Valid credentials should return a JWT token in the response."""
-        from app.auth_controllers import LoginController
         _create_user(db_session)
         with app.test_request_context(
             "/api/login", method="POST",
@@ -91,7 +93,6 @@ class TestLoginControllerUnit:
 
     def test_valid_credentials_returns_status_ok(self, app, db_session):
         """Valid credentials response should contain status: ok."""
-        from app.auth_controllers import LoginController
         _create_user(db_session)
         with app.test_request_context(
             "/api/login", method="POST",
@@ -103,7 +104,6 @@ class TestLoginControllerUnit:
 
     def test_wrong_password_returns_401(self, app, db_session):
         """Wrong password should return 401."""
-        from app.auth_controllers import LoginController
         _create_user(db_session)
         with app.test_request_context(
             "/api/login", method="POST",
@@ -114,7 +114,6 @@ class TestLoginControllerUnit:
 
     def test_wrong_password_error_body(self, app, db_session):
         """Wrong password response should contain status: error."""
-        from app.auth_controllers import LoginController
         _create_user(db_session)
         with app.test_request_context(
             "/api/login", method="POST",
@@ -126,7 +125,6 @@ class TestLoginControllerUnit:
 
     def test_unknown_email_returns_401(self, app, db_session):
         """Unknown email should return 401."""
-        from app.auth_controllers import LoginController
         with app.test_request_context(
             "/api/login", method="POST",
             json={"email": "nobody@example.com", "password": "password1"},
@@ -136,7 +134,6 @@ class TestLoginControllerUnit:
 
     def test_unknown_email_same_error_as_wrong_password(self, app, db_session):
         """Unknown email and wrong password should return the same error message (prevents enumeration)."""
-        from app.auth_controllers import LoginController
         _create_user(db_session)
         with app.test_request_context(
             "/api/login", method="POST",
@@ -156,7 +153,6 @@ class TestLoginControllerUnit:
 
     def test_locked_account_returns_429(self, app, db_session):
         """Account with 5+ recent failed attempts should return 429."""
-        from app.auth_controllers import LoginController
         _create_user(db_session)
         _add_failed_attempts(db_session, "user@example.com", 5)
         with app.test_request_context(
@@ -168,7 +164,6 @@ class TestLoginControllerUnit:
 
     def test_locked_account_error_body(self, app, db_session):
         """Locked account response should contain status: error."""
-        from app.auth_controllers import LoginController
         _create_user(db_session)
         _add_failed_attempts(db_session, "user@example.com", 5)
         with app.test_request_context(
@@ -181,7 +176,6 @@ class TestLoginControllerUnit:
 
     def test_old_failed_attempts_do_not_lock(self, app, db_session):
         """Failed attempts older than 15 minutes should not trigger lockout."""
-        from app.auth_controllers import LoginController
         _create_user(db_session)
         _add_failed_attempts(db_session, "user@example.com", 5, minutes_ago=20)
         with app.test_request_context(
@@ -193,7 +187,6 @@ class TestLoginControllerUnit:
 
     def test_successful_login_records_attempt(self, app, db_session):
         """Successful login should record a successful LoginAttempt."""
-        from app.auth_controllers import LoginController
         _create_user(db_session)
         with app.test_request_context(
             "/api/login", method="POST",
@@ -206,7 +199,6 @@ class TestLoginControllerUnit:
 
     def test_failed_login_records_attempt(self, app, db_session):
         """Failed login should record a failed LoginAttempt."""
-        from app.auth_controllers import LoginController
         _create_user(db_session)
         with app.test_request_context(
             "/api/login", method="POST",
