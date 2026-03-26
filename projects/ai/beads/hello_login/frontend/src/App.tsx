@@ -11,8 +11,11 @@ import { ApiClient } from './api/ApiClient';
 import './App.css';
 
 /**
- * App is the root component. It fetches the greeting on mount and
- * renders the appropriate UI state (loading, error, or the message).
+ * App is the root component. It fetches the personalised greeting on mount
+ * if a JWT is present in localStorage, otherwise prompts the user to log in.
+ *
+ * The full login UI (AuthContext, LoginPage) is being built separately and
+ * will replace the localStorage read once it lands.
  */
 function App() {
   // The greeting message returned by the backend
@@ -24,9 +27,14 @@ function App() {
   // Holds an error string if the fetch fails
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch the greeting once on mount
+  // Fetch the greeting once on mount, only if a token is available
   useEffect(() => {
-    ApiClient.getHello()
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    ApiClient.getHello(token)
       .then((data) => setMessage(data.message))
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
@@ -40,10 +48,13 @@ function App() {
     return <p className="status error">Error: {error}</p>;
   }
 
+  if (!message) {
+    return <p className="status">Please log in to see your greeting.</p>;
+  }
+
   return (
     <main className="app">
-      {/* Render the greeting returned by the backend */}
-      {message && <HelloMessage message={message} />}
+      <HelloMessage message={message} />
     </main>
   );
 }

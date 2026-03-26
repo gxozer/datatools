@@ -37,15 +37,23 @@ class Auth:
         return jwt.encode(payload, current_app.config["JWT_SECRET"], algorithm="HS256")
 
     @staticmethod
-    def require_auth(f):
+    def require_auth(f, *, allowed_roles=None):
         """
-        Decorator that enforces JWT authentication on a route.
+        Decorator that enforces JWT authentication (and optional role check) on a route.
 
         Reads the Authorization: Bearer <token> header, decodes and validates
         the JWT, and injects the decoded payload into flask.g.current_user.
 
+        Args:
+            f: The view function to protect.
+            allowed_roles: Optional set of role strings permitted to access the
+                route (e.g. {"user", "admin"}). When provided, tokens whose
+                "role" claim is not in the set receive a 403. When omitted,
+                any valid token is accepted.
+
         Returns 401 if the header is missing, the scheme is not Bearer,
         or the token is invalid or expired.
+        Returns 403 if the token's role is not in allowed_roles.
         """
         @wraps(f)
         def decorated(*args, **kwargs):
@@ -66,6 +74,9 @@ class Auth:
                 return jsonify({"error": "Token expired", "status": "error"}), 401
             except jwt.InvalidTokenError:
                 return jsonify({"error": "Invalid token", "status": "error"}), 401
+
+            if allowed_roles is not None and payload.get("role") not in allowed_roles:
+                return jsonify({"error": "Forbidden", "status": "error"}), 403
 
             g.current_user = payload
             return f(*args, **kwargs)

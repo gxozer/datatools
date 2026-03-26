@@ -24,7 +24,7 @@ class Router:
         # GET /api/hello — returns personalised greeting for authenticated users
         blueprint.add_url_rule(
             "/hello",
-            view_func=Auth.require_auth(HelloController.hello),
+            view_func=Auth.require_auth(HelloController.hello, allowed_roles={"user", "admin"}),
             methods=["GET"],
         )
 

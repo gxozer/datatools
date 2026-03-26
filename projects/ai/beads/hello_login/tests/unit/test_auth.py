@@ -230,3 +230,71 @@ class TestRequireAuth:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 200
+
+
+class TestRequireAuthRoles:
+    """Tests for the allowed_roles parameter of require_auth."""
+
+    @pytest.fixture
+    def role_client(self, app):
+        """Test client with a route restricted to 'user' and 'admin' roles."""
+        from flask import jsonify
+        from app.auth import Auth
+
+        @app.route("/api/test-roles")
+        def _role_protected():
+            return Auth.require_auth(
+                lambda: jsonify({"status": "ok"}),
+                allowed_roles={"user", "admin"},
+            )()
+
+        return app.test_client()
+
+    def _token_with_role(self, app, role):
+        import jwt as pyjwt
+        from datetime import datetime, timedelta, timezone
+        payload = {
+            "sub": "1",
+            "email": "test@example.com",
+            "full_name": "Test User",
+            "role": role,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        }
+        return pyjwt.encode(payload, app.config["JWT_SECRET"], algorithm="HS256")
+
+    def test_allowed_role_user_passes(self, app, role_client):
+        """Token with role='user' should pass when allowed_roles={'user','admin'}."""
+        token = self._token_with_role(app, "user")
+        response = role_client.get(
+            "/api/test-roles",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+
+    def test_allowed_role_admin_passes(self, app, role_client):
+        """Token with role='admin' should pass when allowed_roles={'user','admin'}."""
+        token = self._token_with_role(app, "admin")
+        response = role_client.get(
+            "/api/test-roles",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+
+    def test_disallowed_role_returns_403(self, app, role_client):
+        """Token with an unlisted role should return 403."""
+        token = self._token_with_role(app, "guest")
+        response = role_client.get(
+            "/api/test-roles",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 403
+
+    def test_disallowed_role_error_body(self, app, role_client):
+        """403 response should include status: error."""
+        token = self._token_with_role(app, "guest")
+        response = role_client.get(
+            "/api/test-roles",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        data = json.loads(response.get_data(as_text=True))
+        assert data["status"] == "error"

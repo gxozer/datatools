@@ -16,13 +16,13 @@ from datetime import datetime, timedelta, timezone
 import jwt as pyjwt
 
 
-def _make_token(app, full_name="Test User", email="test@example.com"):
+def _make_token(app, full_name="Test User", email="test@example.com", role="user"):
     """Generate a valid JWT for testing using the app's JWT_SECRET."""
     payload = {
         "sub": "1",
         "email": email,
         "full_name": full_name,
-        "role": "user",
+        "role": role,
         "exp": datetime.now(timezone.utc) + timedelta(hours=1),
     }
     return pyjwt.encode(payload, app.config["JWT_SECRET"], algorithm="HS256")
@@ -88,6 +88,12 @@ class TestHelloEndpoint:
         """GET /api/hello with a malformed token should return 401."""
         response = client.get("/api/hello", headers={"Authorization": "Bearer not-a-token"})
         assert response.status_code == 401
+
+    def test_with_disallowed_role_returns_403(self, app, client):
+        """GET /api/hello with a valid JWT but disallowed role should return 403."""
+        token = _make_token(app, role="guest")
+        response = client.get("/api/hello", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 403
 
 
 class TestHealthEndpoint:
