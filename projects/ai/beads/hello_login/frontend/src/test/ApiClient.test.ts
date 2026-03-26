@@ -15,18 +15,20 @@ describe('ApiClient.getHello', () => {
 
   it('returns the parsed JSON response on success', async () => {
     // Arrange: mock fetch to return a successful response
-    const mockPayload = { message: 'Hello, World!', status: 'ok' };
+    const mockPayload = { message: 'Hello, Test User!', status: 'ok' };
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve(mockPayload),
     }));
 
     // Act
-    const result = await ApiClient.getHello();
+    const result = await ApiClient.getHello('test-token');
 
     // Assert
     expect(result).toEqual(mockPayload);
-    expect(fetch).toHaveBeenCalledWith('/api/hello');
+    expect(fetch).toHaveBeenCalledWith('/api/hello', {
+      headers: { Authorization: 'Bearer test-token' },
+    });
   });
 
   it('throws an Error when the response is not ok', async () => {
@@ -38,7 +40,7 @@ describe('ApiClient.getHello', () => {
     }));
 
     // Act & Assert
-    await expect(ApiClient.getHello()).rejects.toThrow(
+    await expect(ApiClient.getHello('test-token')).rejects.toThrow(
       'Request failed: 500 Internal Server Error'
     );
   });

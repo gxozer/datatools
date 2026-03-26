@@ -19,16 +19,19 @@ export interface HelloResponse {
  */
 export class ApiClient {
   /**
-   * Fetch the Hello World greeting from the backend.
+   * Fetch the personalised greeting from the backend.
    *
    * The Vite dev proxy forwards /api/* requests to http://localhost:5000,
    * so no base URL is needed in development.
    *
+   * @param token - A valid JWT to send in the Authorization header.
    * @returns A promise resolving to the HelloResponse payload.
    * @throws An Error with a descriptive message if the request fails.
    */
-  static async getHello(): Promise<HelloResponse> {
-    const response = await fetch('/api/hello');
+  static async getHello(token: string): Promise<HelloResponse> {
+    const response = await fetch('/api/hello', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
     if (!response.ok) {
       throw new Error(`Request failed: ${response.status} ${response.statusText}`);

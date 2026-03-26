@@ -1,6 +1,6 @@
-# Hello World Web App
+# Hello Login Web App
 
-A minimal full-stack web application that displays a "Hello, World!" message fetched from a REST API.
+A full-stack web application with JWT authentication. Users log in to receive a personalised greeting fetched from a protected REST API.
 
 **Stack:** Python + Flask (backend) · TypeScript + React (frontend)
 
@@ -11,17 +11,23 @@ A minimal full-stack web application that displays a "Hello, World!" message fet
 ```
 Browser (React/Vite)
         │
+        │  POST /api/login  →  JWT token
+        │
         │  GET /api/hello
+        │  Authorization: Bearer <token>
         ▼
 Flask Backend
         │
-        │  JSON: { "message": "Hello, World!", "status": "ok" }
+        │  Auth.require_auth validates JWT, checks role
+        │
+        │  JSON: { "message": "Hello, Alice!", "status": "ok" }
         ▼
 HelloController → Response
 ```
 
-- The React frontend fetches `GET /api/hello` on page load via `ApiClient`
-- Flask serves the response from `HelloController`
+- The React frontend calls `POST /api/login` to obtain a JWT, stored in `localStorage`
+- `GET /api/hello` requires a valid Bearer token with role `user` or `admin`
+- Flask serves the personalised greeting from `HelloController`
 - In development, Vite proxies `/api/*` requests to `localhost:5001`
 
 ---
@@ -88,16 +94,17 @@ npm run dev
 # Vite running on http://localhost:5173
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser. You should see **"Hello, World!"**.
+Open [http://localhost:5173](http://localhost:5173) in your browser. The app will prompt you to log in. Once authenticated you will see a personalised greeting, e.g. **"Hello, Alice!"**.
 
 ---
 
 ## API Reference
 
-| Method | Endpoint | Response |
-|--------|----------|----------|
-| GET | `/api/hello` | `{"message": "Hello, World!", "status": "ok"}` |
-| GET | `/api/health` | `{"status": "ok"}` |
+| Method | Endpoint | Auth | Response |
+|--------|----------|------|----------|
+| POST | `/api/login` | None | `{"token": "<jwt>", "status": "ok"}` |
+| GET | `/api/hello` | Bearer JWT (role: `user` or `admin`) | `{"message": "Hello, {name}!", "status": "ok"}` |
+| GET | `/api/health` | None | `{"status": "ok"}` |
 
 ---
 
@@ -121,10 +128,13 @@ cd frontend && npm test
 beads3/
 ├── backend/
 │   ├── app/
-│   │   ├── __init__.py       # Package entry point
-│   │   ├── factory.py        # Flask app factory (create_app)
-│   │   ├── controllers.py    # HelloController, HealthController
-│   │   └── routes.py         # API Blueprint and URL rules
+│   │   ├── __init__.py           # Package entry point
+│   │   ├── factory.py            # Flask app factory (create_app)
+│   │   ├── auth.py               # Auth class: generate_token, require_auth
+│   │   ├── auth_controllers.py   # LoginController
+│   │   ├── controllers.py        # HelloController, HealthController
+│   │   ├── models.py             # User, LoginAttempt, PasswordResetToken
+│   │   └── routes.py             # API Blueprint and URL rules
 │   ├── run.py                # Entry point
 │   ├── requirements.txt      # Runtime dependencies
 │   └── requirements-dev.txt  # Dev/test dependencies
