@@ -140,14 +140,20 @@ class PasswordResetController:
                 expires_at=expires_at,
             )
             db.session.add(reset_token)
-            db.session.commit()
+            db.session.flush()  # assign PK before sending — rolled back on mail failure
 
-            msg = Message(
-                subject="Password Reset",
-                recipients=[email],
-                body=f"Use this token to reset your password: {raw_token}\nExpires in 1 hour.",
-            )
-            mail.send(msg)
+            try:
+                msg = Message(
+                    subject="Password Reset",
+                    recipients=[email],
+                    body=f"Use this token to reset your password: {raw_token}\nExpires in 1 hour.",
+                )
+                mail.send(msg)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                current_app.logger.exception("Failed to send password reset email to %s", email)
+                # Fall through — always return the same 200 to prevent enumeration
 
         return jsonify(PasswordResetController._RESET_RESPONSE), 200
 
@@ -167,8 +173,11 @@ class PasswordResetController:
         raw_token = data.get("token")
         new_password = data.get("password")
 
-        if not raw_token or not new_password:
+        if not isinstance(raw_token, str) or not isinstance(new_password, str):
             return jsonify({"error": "token and password are required", "status": "error"}), 400
+        if not raw_token.strip() or not new_password:
+            return jsonify({"error": "token and password are required", "status": "error"}), 400
+        raw_token = raw_token.strip()
 
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
         reset_token = db.session.query(PasswordResetToken).filter_by(token_hash=token_hash).first()
