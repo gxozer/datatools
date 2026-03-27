@@ -5,14 +5,17 @@ Controllers are implemented as classes with static methods, consistent
 with the OO conventions used in controllers.py.
 """
 
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from flask import jsonify, request
+from flask import current_app, jsonify, request
+from flask_mail import Message
 
 from .auth import Auth
-from .database import db
-from .models import LoginAttempt, User
+from .database import db, mail
+from .models import LoginAttempt, PasswordResetToken, User
 
 _LOCKOUT_WINDOW_MINUTES = 15
 _LOCKOUT_THRESHOLD = 5
@@ -96,3 +99,92 @@ class LoginController:
 
         token = Auth.generate_token(user)
         return jsonify({"token": token, "status": "ok"}), 200
+
+
+class PasswordResetController:
+    """Handles POST /api/password-reset/request and /api/password-reset/confirm."""
+
+    _TOKEN_EXPIRY_HOURS = 1
+    _RESET_RESPONSE = {"message": "If that email is registered, a reset link has been sent.", "status": "ok"}
+
+    @staticmethod
+    def request_reset():
+        """
+        Request a password reset link.
+
+        Looks up the user by email. If found, generates a secure token, stores
+        its SHA-256 hash in the DB, and sends a reset email. Always returns 200
+        regardless of whether the email exists to prevent enumeration.
+
+        Returns:
+            200 always (silent no-op for unknown emails).
+            400 if the email field is missing.
+        """
+        data = request.get_json(silent=True) or {}
+        email = data.get("email")
+
+        if not isinstance(email, str) or not email.strip():
+            return jsonify({"error": "email is required", "status": "error"}), 400
+
+        email = email.strip().lower()
+        user = db.session.query(User).filter_by(email=email).first()
+
+        if user is not None:
+            raw_token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=PasswordResetController._TOKEN_EXPIRY_HOURS)
+
+            reset_token = PasswordResetToken(
+                user_id=user.id,
+                token_hash=token_hash,
+                expires_at=expires_at,
+            )
+            db.session.add(reset_token)
+            db.session.commit()
+
+            msg = Message(
+                subject="Password Reset",
+                recipients=[email],
+                body=f"Use this token to reset your password: {raw_token}\nExpires in 1 hour.",
+            )
+            mail.send(msg)
+
+        return jsonify(PasswordResetController._RESET_RESPONSE), 200
+
+    @staticmethod
+    def confirm_reset():
+        """
+        Confirm a password reset using a token.
+
+        Validates the token (exists, not expired, not used), updates the user's
+        password, and marks the token as used.
+
+        Returns:
+            200 on success.
+            400 if fields are missing or the token is invalid/expired/used.
+        """
+        data = request.get_json(silent=True) or {}
+        raw_token = data.get("token")
+        new_password = data.get("password")
+
+        if not raw_token or not new_password:
+            return jsonify({"error": "token and password are required", "status": "error"}), 400
+
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        reset_token = db.session.query(PasswordResetToken).filter_by(token_hash=token_hash).first()
+
+        if reset_token is None:
+            return jsonify({"error": "Invalid or expired reset token", "status": "error"}), 400
+
+        now = datetime.now(timezone.utc)
+        if reset_token.used:
+            return jsonify({"error": "Invalid or expired reset token", "status": "error"}), 400
+        if reset_token.expires_at.replace(tzinfo=timezone.utc) < now:
+            return jsonify({"error": "Invalid or expired reset token", "status": "error"}), 400
+
+        user = db.session.query(User).filter_by(id=reset_token.user_id).first()
+        user.hashed_password = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+        reset_token.used = True
+        db.session.commit()
+
+        return jsonify({"message": "Password has been reset.", "status": "ok"}), 200

@@ -8,7 +8,7 @@ from the factory to wire all routes under the /api prefix.
 
 from flask import Blueprint
 from .auth import Auth
-from .auth_controllers import LoginController
+from .auth_controllers import LoginController, PasswordResetController
 from .controllers import HelloController, HealthController
 
 
@@ -32,6 +32,20 @@ class Router:
         blueprint.add_url_rule(
             "/login",
             view_func=LoginController.login,
+            methods=["POST"],
+        )
+
+        # POST /api/password-reset/request — send reset email
+        blueprint.add_url_rule(
+            "/password-reset/request",
+            view_func=PasswordResetController.request_reset,
+            methods=["POST"],
+        )
+
+        # POST /api/password-reset/confirm — apply new password
+        blueprint.add_url_rule(
+            "/password-reset/confirm",
+            view_func=PasswordResetController.confirm_reset,
             methods=["POST"],
         )
 
