@@ -6,6 +6,7 @@ Attribute access is proxied to the inner SQLAlchemy object so callers
 can use db.Model, db.Column, db.session, etc. as normal.
 """
 
+from flask_mail import Mail
 from flask_sqlalchemy import SQLAlchemy
 
 
@@ -21,3 +22,4 @@ class Database:
 
 
 db = Database()
+mail = Mail()

@@ -11,7 +11,7 @@ from flask import Flask
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from .database import db
+from .database import db, mail
 from .routes import Router
 
 
@@ -57,8 +57,14 @@ class AppFactory:
             )
         app.config["JWT_SECRET"] = jwt_secret
 
+        # Mail config — suppress sends in testing/dev; configure via env in production
+        app.config.setdefault("MAIL_SERVER", os.environ.get("MAIL_SERVER", "localhost"))
+        app.config.setdefault("MAIL_DEFAULT_SENDER", os.environ.get("MAIL_DEFAULT_SENDER", "noreply@example.com"))
+        app.config.setdefault("MAIL_SUPPRESS_SEND", app.config.get("TESTING", False))
+
         # Initialise extensions
         db.init_app(app)
+        mail.init_app(app)
 
         # Allow requests from the React dev server (localhost:5173 for Vite)
         CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
