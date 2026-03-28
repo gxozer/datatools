@@ -101,6 +101,14 @@ class LoginController:
         return jsonify({"token": token, "status": "ok"}), 200
 
 
+class LogoutController:
+    """Handles POST /api/logout. Stub — not yet implemented."""
+
+    @staticmethod
+    def logout():
+        raise NotImplementedError
+
+
 class PasswordResetController:
     """Handles POST /api/password-reset/request and /api/password-reset/confirm."""
 
