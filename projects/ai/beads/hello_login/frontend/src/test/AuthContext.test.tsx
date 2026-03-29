@@ -7,9 +7,23 @@
  */
 
 import React from 'react';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { AuthProvider, useAuth } from '../context/AuthContext';
+
+// ---------------------------------------------------------------------------
+// localStorage mock
+// jsdom 28 / Vitest 4 do not expose a fully writable localStorage, so we
+// stub the global with an in-memory implementation for the whole suite.
+// ---------------------------------------------------------------------------
+
+const _store: Record<string, string> = {};
+const localStorageMock = {
+  getItem: (key: string) => _store[key] ?? null,
+  setItem: (key: string, value: string) => { _store[key] = value; },
+  removeItem: (key: string) => { delete _store[key]; },
+  clear: () => { Object.keys(_store).forEach(k => delete _store[k]); },
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -40,11 +54,12 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 
 describe('AuthContext', () => {
   beforeEach(() => {
-    localStorage.clear();
+    vi.stubGlobal('localStorage', localStorageMock);
+    localStorageMock.clear();
   });
 
   afterEach(() => {
-    localStorage.clear();
+    vi.unstubAllGlobals();
   });
 
   // -------------------------------------------------------------------------
