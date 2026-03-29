@@ -101,6 +101,26 @@ class LoginController:
         return jsonify({"token": token, "status": "ok"}), 200
 
 
+class LogoutController:
+    """Handles POST /api/logout."""
+
+    @staticmethod
+    def logout():
+        """
+        Log out the current user.
+
+        Auth is enforced by Auth.require_auth at the route level, so this
+        method is only reached with a valid JWT. JWTs are stateless — there
+        is no server-side session to destroy. A token denylist (e.g. Redis
+        set keyed by jti with TTL matching token expiry) would be inserted
+        here if revocation is needed in the future.
+
+        Returns:
+            200 always (require_auth returns 401 before we get here).
+        """
+        return jsonify({"message": "Logged out successfully.", "status": "ok"}), 200
+
+
 class PasswordResetController:
     """Handles POST /api/password-reset/request and /api/password-reset/confirm."""
 

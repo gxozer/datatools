@@ -8,7 +8,7 @@ from the factory to wire all routes under the /api prefix.
 
 from flask import Blueprint
 from .auth import Auth
-from .auth_controllers import LoginController, PasswordResetController
+from .auth_controllers import LoginController, LogoutController, PasswordResetController
 from .controllers import HelloController, HealthController
 
 
@@ -32,6 +32,13 @@ class Router:
         blueprint.add_url_rule(
             "/login",
             view_func=LoginController.login,
+            methods=["POST"],
+        )
+
+        # POST /api/logout — invalidate session (stateless JWT; see controller for denylist note)
+        blueprint.add_url_rule(
+            "/logout",
+            view_func=Auth.require_auth(LogoutController.logout),
             methods=["POST"],
         )
 
