@@ -8,7 +8,7 @@ from the factory to wire all routes under the /api prefix.
 
 from flask import Blueprint
 from .auth import Auth
-from .auth_controllers import LoginController, LogoutController, PasswordResetController
+from .auth_controllers import LoginController, LogoutController, PasswordResetController, SignupController
 from .controllers import HelloController, HealthController
 
 
@@ -26,6 +26,13 @@ class Router:
             "/hello",
             view_func=Auth.require_auth(HelloController.hello, allowed_roles={"user", "admin"}),
             methods=["GET"],
+        )
+
+        # POST /api/signup — register a new user and return JWT
+        blueprint.add_url_rule(
+            "/signup",
+            view_func=SignupController.signup,
+            methods=["POST"],
         )
 
         # POST /api/login — authenticate and return JWT
