@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from flask import current_app, jsonify, request
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from flask_mail import Message
 
 from .auth import Auth
@@ -128,7 +129,7 @@ class SignupController:
         # Type and presence checks
         if not isinstance(full_name, str) or not isinstance(email, str) or not isinstance(password, str):
             return jsonify({"error": "full_name, email, and password are required", "status": "error"}), 400
-        if not full_name.strip() or not email.strip() or not password:
+        if not full_name.strip() or not email.strip() or not password.strip():
             return jsonify({"error": "full_name, email, and password are required", "status": "error"}), 400
 
         email = email.strip().lower()
@@ -152,7 +153,15 @@ class SignupController:
         hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         user = User(full_name=full_name, email=email, hashed_password=hashed_password)
         db.session.add(user)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            return jsonify({"error": "Email already registered", "status": "error"}), 409
+        except SQLAlchemyError:
+            db.session.rollback()
+            current_app.logger.exception("Failed to create user for %s", email)
+            return jsonify({"error": "Registration failed, please try again", "status": "error"}), 500
 
         token = Auth.generate_token(user)
         return jsonify({"token": token, "status": "ok"}), 201
