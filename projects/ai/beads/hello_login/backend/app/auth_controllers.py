@@ -101,6 +101,63 @@ class LoginController:
         return jsonify({"token": token, "status": "ok"}), 200
 
 
+class SignupController:
+    """Handles POST /api/signup."""
+
+    _MIN_PASSWORD_LENGTH = 8
+
+    @staticmethod
+    def signup():
+        """
+        Register a new user.
+
+        Validates full_name, email (format check), and password (min 8 chars).
+        Returns 409 if the email is already registered, 201 + JWT on success.
+
+        Returns:
+            201 + JWT on success.
+            400 if required fields are missing or invalid.
+            409 if the email is already registered.
+        """
+        data = request.get_json(silent=True) or {}
+
+        full_name = data.get("full_name")
+        email = data.get("email")
+        password = data.get("password")
+
+        # Type and presence checks
+        if not isinstance(full_name, str) or not isinstance(email, str) or not isinstance(password, str):
+            return jsonify({"error": "full_name, email, and password are required", "status": "error"}), 400
+        if not full_name.strip() or not email.strip() or not password:
+            return jsonify({"error": "full_name, email, and password are required", "status": "error"}), 400
+
+        email = email.strip().lower()
+        full_name = full_name.strip()
+
+        # Basic email format validation
+        at = email.find("@")
+        if at < 1 or at == len(email) - 1 or "." not in email[at + 1:]:
+            return jsonify({"error": "Invalid email address", "status": "error"}), 400
+
+        # Password strength: minimum 8 characters
+        if len(password) < SignupController._MIN_PASSWORD_LENGTH:
+            return jsonify({"error": "Password must be at least 8 characters", "status": "error"}), 400
+
+        # Duplicate email check
+        existing = db.session.query(User).filter_by(email=email).first()
+        if existing is not None:
+            return jsonify({"error": "Email already registered", "status": "error"}), 409
+
+        # Create user
+        hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        user = User(full_name=full_name, email=email, hashed_password=hashed_password)
+        db.session.add(user)
+        db.session.commit()
+
+        token = Auth.generate_token(user)
+        return jsonify({"token": token, "status": "ok"}), 201
+
+
 class LogoutController:
     """Handles POST /api/logout."""
 
