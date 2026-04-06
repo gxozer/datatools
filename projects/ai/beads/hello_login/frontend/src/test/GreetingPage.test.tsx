@@ -67,7 +67,7 @@ describe('GreetingPage', () => {
   });
 
   it('fetches greeting from ApiClient on mount', async () => {
-    mockGetHello.mockResolvedValue({ message: 'Hello, Alice!' });
+    mockGetHello.mockResolvedValue({ message: 'Hello, Alice!', status: 'ok' });
     renderGreetingPage();
 
     await waitFor(() => {
@@ -76,7 +76,7 @@ describe('GreetingPage', () => {
   });
 
   it('displays the greeting message on success', async () => {
-    mockGetHello.mockResolvedValue({ message: 'Hello, Alice!' });
+    mockGetHello.mockResolvedValue({ message: 'Hello, Alice!', status: 'ok' });
     renderGreetingPage();
 
     await waitFor(() => {
@@ -85,7 +85,7 @@ describe('GreetingPage', () => {
   });
 
   it('renders a logout button', async () => {
-    mockGetHello.mockResolvedValue({ message: 'Hello, Alice!' });
+    mockGetHello.mockResolvedValue({ message: 'Hello, Alice!', status: 'ok' });
     renderGreetingPage();
 
     await waitFor(() => {
@@ -94,7 +94,7 @@ describe('GreetingPage', () => {
   });
 
   it('calls AuthContext.logout when logout button is clicked', async () => {
-    mockGetHello.mockResolvedValue({ message: 'Hello, Alice!' });
+    mockGetHello.mockResolvedValue({ message: 'Hello, Alice!', status: 'ok' });
     const { authLogout } = renderGreetingPage();
 
     await waitFor(() => {

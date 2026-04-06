@@ -59,7 +59,7 @@ describe('ForgotPasswordPage', () => {
   });
 
   it('calls ApiClient.requestPasswordReset with the email on submit', async () => {
-    mockRequestPasswordReset.mockResolvedValue(undefined);
+    mockRequestPasswordReset.mockResolvedValue({ message: 'ok', status: 'ok' });
     renderForgotPasswordPage();
 
     const emailInput = screen.getByLabelText(/email/i) ?? screen.getByPlaceholderText(/email/i);
@@ -87,7 +87,7 @@ describe('ForgotPasswordPage', () => {
   });
 
   it('shows a success message after successful submit', async () => {
-    mockRequestPasswordReset.mockResolvedValue(undefined);
+    mockRequestPasswordReset.mockResolvedValue({ message: 'ok', status: 'ok' });
     renderForgotPasswordPage();
 
     const emailInput = screen.getByLabelText(/email/i) ?? screen.getByPlaceholderText(/email/i);

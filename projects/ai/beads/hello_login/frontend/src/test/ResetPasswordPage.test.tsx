@@ -69,7 +69,7 @@ describe('ResetPasswordPage', () => {
   });
 
   it('calls ApiClient.confirmPasswordReset with token and new password', async () => {
-    mockConfirmPasswordReset.mockResolvedValue(undefined);
+    mockConfirmPasswordReset.mockResolvedValue({ message: 'ok', status: 'ok' });
     renderResetPasswordPage('my-token-123');
 
     const passwordInput =
@@ -84,7 +84,7 @@ describe('ResetPasswordPage', () => {
   });
 
   it('navigates to /login on successful reset', async () => {
-    mockConfirmPasswordReset.mockResolvedValue(undefined);
+    mockConfirmPasswordReset.mockResolvedValue({ message: 'ok', status: 'ok' });
     renderResetPasswordPage();
 
     const passwordInput =

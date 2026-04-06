@@ -44,6 +44,7 @@ function renderLoginPage() {
   mockUseAuth.mockReturnValue({
     isAuthenticated: false,
     user: null,
+    token: null,
     login: authLogin,
     logout: vi.fn(),
   });

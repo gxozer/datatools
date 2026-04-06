@@ -100,7 +100,7 @@ describe('ApiClient.signup', () => {
   });
 
   it('POSTs email, password, and full_name to /api/signup', async () => {
-    const payload = { status: 'ok' };
+    const payload = { token: 'jwt-xyz', status: 'ok' };
     mockFetch(true, payload, 201);
 
     const result = await ApiClient.signup('Alice', 'alice@example.com', 'pass123');
