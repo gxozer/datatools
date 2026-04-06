@@ -23,6 +23,7 @@ export interface JwtPayload {
 interface AuthContextValue {
   isAuthenticated: boolean;
   user: JwtPayload | null;
+  token: string | null;
   login: (token: string) => void;
   logout: () => void;
 }
@@ -57,34 +58,38 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<JwtPayload | null>(null);
+  const [token, setToken] = useState<string | null>(null);
 
   // On mount: restore valid session from localStorage, clear expired tokens.
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
-    const payload = decodeJwt(token);
+    const stored = localStorage.getItem('token');
+    if (!stored) return;
+    const payload = decodeJwt(stored);
     if (payload && !isExpired(payload)) {
+      setToken(stored);
       setUser(payload);
     } else {
       localStorage.removeItem('token');
     }
   }, []);
 
-  function login(token: string) {
-    const payload = decodeJwt(token);
+  function login(tok: string) {
+    const payload = decodeJwt(tok);
     if (payload) {
-      localStorage.setItem('token', token);
+      localStorage.setItem('token', tok);
+      setToken(tok);
       setUser(payload);
     }
   }
 
   function logout() {
     localStorage.removeItem('token');
+    setToken(null);
     setUser(null);
   }
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated: user !== null, user, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated: user !== null, user, token, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
