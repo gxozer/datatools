@@ -37,17 +37,27 @@ TEST_USER = {
 def auth_backend(tmp_path_factory):
     """Start a Flask backend with a fresh temporary SQLite DB."""
     db_path = tmp_path_factory.mktemp("e2e_db") / "e2e.db"
+    server_env = {
+        **os.environ,
+        "PORT": str(BACKEND_PORT),
+        "FLASK_DEBUG": "false",
+        "DATABASE_URL": f"sqlite:///{db_path}",
+        "JWT_SECRET": "e2e-test-secret-key-32-bytes-long!",
+        "MAIL_SUPPRESS_SEND": "1",
+    }
+
+    # Initialise schema via Alembic
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd="backend",
+        env=server_env,
+        check=True,
+    )
+
     proc = subprocess.Popen(
         [sys.executable, "run.py"],
         cwd="backend",
-        env={
-            **os.environ,
-            "PORT": str(BACKEND_PORT),
-            "FLASK_DEBUG": "false",
-            "DATABASE_URL": f"sqlite:///{db_path}",
-            "JWT_SECRET": "e2e-test-secret-key-32-bytes-long!",
-            "CREATE_TABLES": "1",
-        },
+        env=server_env,
     )
     time.sleep(1)
     yield proc

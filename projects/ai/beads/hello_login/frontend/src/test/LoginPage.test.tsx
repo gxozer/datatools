@@ -132,6 +132,20 @@ describe('LoginPage', () => {
     });
   });
 
+  it('renders a link to the signup page', () => {
+    renderLoginPage();
+    const link = screen.getByRole('link', { name: /sign.?up/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/signup');
+  });
+
+  it('renders a link to the forgot password page', () => {
+    renderLoginPage();
+    const link = screen.getByRole('link', { name: /forgot.?password/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/forgot-password');
+  });
+
   it('shows an error message on failed login', async () => {
     mockLogin.mockRejectedValue(new Error('Invalid email or password'));
     renderLoginPage();

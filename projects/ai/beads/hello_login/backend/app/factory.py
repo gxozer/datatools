@@ -57,10 +57,15 @@ class AppFactory:
             )
         app.config["JWT_SECRET"] = jwt_secret
 
-        # Mail config — suppress sends in testing/dev; configure via env in production
+        # Mail config — configure via env vars; suppress sends in testing
         app.config.setdefault("MAIL_SERVER", os.environ.get("MAIL_SERVER", "localhost"))
+        app.config.setdefault("MAIL_PORT", int(os.environ.get("MAIL_PORT", 587)))
+        app.config.setdefault("MAIL_USE_TLS", os.environ.get("MAIL_USE_TLS", "true").lower() in ("1", "true", "yes"))
+        app.config.setdefault("MAIL_USERNAME", os.environ.get("MAIL_USERNAME", ""))
+        app.config.setdefault("MAIL_PASSWORD", os.environ.get("MAIL_PASSWORD", ""))
         app.config.setdefault("MAIL_DEFAULT_SENDER", os.environ.get("MAIL_DEFAULT_SENDER", "noreply@example.com"))
-        app.config.setdefault("MAIL_SUPPRESS_SEND", app.config.get("TESTING", False))
+        suppress_env = os.environ.get("MAIL_SUPPRESS_SEND", "").lower() in ("1", "true", "yes")
+        app.config.setdefault("MAIL_SUPPRESS_SEND", suppress_env or app.config.get("TESTING", False))
 
         # Initialise extensions
         db.init_app(app)

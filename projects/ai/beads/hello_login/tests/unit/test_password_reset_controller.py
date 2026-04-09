@@ -9,6 +9,7 @@ import hashlib
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import bcrypt
 import pytest
@@ -136,6 +137,17 @@ class TestRequestReset:
             _, status = _unpack(PasswordResetController.request_reset())
             assert status == 400
 
+    def test_mail_failure_still_returns_200(self, app, db_session):
+        """request_reset() should return 200 even if mail sending fails."""
+        _create_user(db_session)
+        with app.test_request_context(
+            "/api/password-reset/request", method="POST",
+            json={"email": "user@example.com"},
+        ):
+            with patch("app.auth_controllers.mail.send", side_effect=Exception("SMTP error")):
+                _, status = _unpack(PasswordResetController.request_reset())
+        assert status == 200
+
 
 # ---------------------------------------------------------------------------
 # Unit tests: PasswordResetController.confirm_reset()
@@ -226,6 +238,24 @@ class TestConfirmReset:
         with app.test_request_context(
             "/api/password-reset/confirm", method="POST",
             json={"token": raw},
+        ):
+            _, status = _unpack(PasswordResetController.confirm_reset())
+            assert status == 400
+
+    def test_empty_token_returns_400(self, app, db_session):
+        """confirm_reset() with an empty token string should return 400."""
+        with app.test_request_context(
+            "/api/password-reset/confirm", method="POST",
+            json={"token": "", "password": "newpassword1"},
+        ):
+            _, status = _unpack(PasswordResetController.confirm_reset())
+            assert status == 400
+
+    def test_empty_password_returns_400(self, app, db_session):
+        """confirm_reset() with an empty password string should return 400."""
+        with app.test_request_context(
+            "/api/password-reset/confirm", method="POST",
+            json={"token": "sometoken", "password": ""},
         ):
             _, status = _unpack(PasswordResetController.confirm_reset())
             assert status == 400

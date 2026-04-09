@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ApiClient } from '../api/ApiClient';
 import { useAuth } from '../context/AuthContext';
 
@@ -49,6 +49,8 @@ export function LoginPage() {
         {error && <div role="alert">{error}</div>}
         <button type="submit">Log In</button>
       </form>
+      <p>Don't have an account? <Link to="/signup">Sign up</Link></p>
+      <p><Link to="/forgot-password">Forgot password?</Link></p>
     </main>
   );
 }

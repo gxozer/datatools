@@ -4,10 +4,18 @@ import { ApiClient } from '../api/ApiClient';
 
 export function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token') ?? '';
+  const token = searchParams.get('token');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  if (!token) {
+    return (
+      <main>
+        <div role="alert">Invalid reset link. Please request a new password reset.</div>
+      </main>
+    );
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

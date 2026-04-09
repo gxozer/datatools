@@ -46,7 +46,7 @@ HelloController → Response
 
 ```bash
 git clone https://github.com/gxozer/datatools.git
-cd datatools/projects/ai/beads/beads3
+cd datatools/projects/ai/beads/hello_login
 ```
 
 ### 2. Backend
@@ -58,10 +58,33 @@ source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Copy the example environment file:
+Copy the example environment file and fill in your values:
 
 ```bash
 cp .env.example .env
+```
+
+**Email (Brevo):** Password reset emails are sent via [Brevo](https://brevo.com) SMTP. Sign up for a free account (300 emails/day, no expiry), then:
+
+1. Go to **Settings → SMTP & API → SMTP** and generate an SMTP key
+2. Go to **Senders, Domains & Dedicated IPs** and verify your sender address
+3. Fill in the `MAIL_*` variables in `.env`:
+
+```
+MAIL_SERVER=smtp-relay.brevo.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=your-brevo-login-email@example.com
+MAIL_PASSWORD=your-brevo-smtp-key
+MAIL_DEFAULT_SENDER=your-brevo-login-email@example.com
+```
+
+To skip email sending in development, set `MAIL_SUPPRESS_SEND=1` in `.env` instead.
+
+Initialise the database:
+
+```bash
+alembic upgrade head
 ```
 
 ### 3. Frontend
@@ -75,7 +98,7 @@ npm install
 
 ## Running Locally
 
-Open two terminals from the `beads3/` directory:
+Open two terminals from the `hello_login/` directory:
 
 **Terminal 1 — Backend:**
 
@@ -122,10 +145,60 @@ cd frontend && npm test
 
 ---
 
+## Debugging
+
+### Backend — PyCharm
+
+1. Open `backend/` in PyCharm and set the interpreter to `backend/.venv`
+2. Open `run.py`
+3. Click in the gutter next to any line to set a breakpoint
+4. Click **🐛 Debug** (or press Shift+F9) to start the server in debug mode
+5. Trigger the endpoint from the browser — PyCharm pauses at your breakpoint with the full debugger UI (variables, call stack, step controls)
+
+### Backend — terminal (pdb)
+
+Add `breakpoint()` anywhere in the code, then run the server normally:
+
+```bash
+python run.py
+```
+
+When execution reaches that line the terminal drops into a `pdb` prompt:
+
+```
+(Pdb) n       # next line
+(Pdb) s       # step into
+(Pdb) p expr  # print expression
+(Pdb) c       # continue
+(Pdb) q       # quit
+```
+
+---
+
+## Inspecting the Database
+
+```bash
+sqlite3 backend/instance/app.db
+```
+
+Useful commands:
+
+```sql
+.tables                           -- list all tables
+.mode column                      -- readable column layout
+.headers on                       -- show column names
+SELECT * FROM users;
+SELECT * FROM login_attempts;
+SELECT * FROM password_reset_tokens;
+.quit
+```
+
+---
+
 ## Project Structure
 
 ```
-beads3/
+hello_login/
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py           # Package entry point

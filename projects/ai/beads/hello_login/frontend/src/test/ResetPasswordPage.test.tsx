@@ -114,4 +114,16 @@ describe('ResetPasswordPage', () => {
       ).toBeInTheDocument();
     });
   });
+
+  it('shows an invalid link error when no token is in the URL', () => {
+    render(
+      <MemoryRouter initialEntries={['/reset']}>
+        <Routes>
+          <Route path="/reset" element={<ResetPasswordPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reset|submit|save/i })).not.toBeInTheDocument();
+  });
 });

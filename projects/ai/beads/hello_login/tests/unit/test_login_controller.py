@@ -208,3 +208,21 @@ class TestLoginControllerUnit:
         attempt = db_session.query(LoginAttempt).filter_by(email="user@example.com").first()
         assert attempt is not None
         assert attempt.success is False
+
+    def test_empty_email_returns_400(self, app, db_session):
+        """Empty email string should return 400."""
+        with app.test_request_context(
+            "/api/login", method="POST",
+            json={"email": "", "password": "password1"},
+        ):
+            _, status = _unpack(LoginController.login())
+            assert status == 400
+
+    def test_empty_password_returns_400(self, app, db_session):
+        """Empty password string should return 400."""
+        with app.test_request_context(
+            "/api/login", method="POST",
+            json={"email": "user@example.com", "password": ""},
+        ):
+            _, status = _unpack(LoginController.login())
+            assert status == 400
