@@ -35,6 +35,7 @@ function renderProtectedRoute(authenticated: boolean) {
   mockUseAuth.mockReturnValue({
     isAuthenticated: authenticated,
     user: authenticated ? { sub: '1', full_name: 'Alice', role: 'user', exp: 9999999999 } : null,
+    token: authenticated ? 'jwt-token' : null,
     login: vi.fn(),
     logout: vi.fn(),
   });

@@ -8,6 +8,8 @@ All tests are expected to fail until SignupController is implemented (TDD red ph
 import json
 import pytest
 import bcrypt
+from unittest.mock import patch
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.auth_controllers import SignupController
 from app.database import db
@@ -167,3 +169,17 @@ class TestSignupControllerDuplicate:
         with _make_request(app, {"full_name": "Other", "email": "EXISTING@EXAMPLE.COM", "password": "Password1!"}):
             response, status = _unpack(SignupController.signup())
         assert status == 409
+
+    def test_integrity_error_on_commit_returns_409(self, db_session, app):
+        """IntegrityError during commit (race condition) should return 409."""
+        with _make_request(app, {"full_name": "Alice", "email": "alice@example.com", "password": "Password1!"}):
+            with patch.object(db.session, "commit", side_effect=IntegrityError(None, None, Exception())):
+                response, status = _unpack(SignupController.signup())
+        assert status == 409
+
+    def test_sqlalchemy_error_on_commit_returns_500(self, db_session, app):
+        """Generic SQLAlchemyError during commit should return 500."""
+        with _make_request(app, {"full_name": "Alice", "email": "alice@example.com", "password": "Password1!"}):
+            with patch.object(db.session, "commit", side_effect=SQLAlchemyError()):
+                response, status = _unpack(SignupController.signup())
+        assert status == 500

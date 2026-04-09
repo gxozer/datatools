@@ -31,8 +31,8 @@ export function AppRoutes() {
         isAuthenticated ? <Navigate to="/hello" replace /> : <LoginPage />
       } />
       <Route path="/signup" element={<SignupPage />} />
-      <Route path="/forgot" element={<ForgotPasswordPage />} />
-      <Route path="/reset" element={<ResetPasswordPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Protected routes */}
       <Route path="/hello" element={

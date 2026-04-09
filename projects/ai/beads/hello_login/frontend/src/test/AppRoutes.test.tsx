@@ -45,6 +45,7 @@ function renderAt(path: string, authenticated: boolean) {
   mockUseAuth.mockReturnValue({
     isAuthenticated: authenticated,
     user: authenticated ? { sub: '1', full_name: 'Alice', role: 'user', exp: 9999999999 } : null,
+    token: authenticated ? 'jwt-token' : null,
     login: vi.fn(),
     logout: vi.fn(),
   });
@@ -77,8 +78,8 @@ describe('AppRoutes', () => {
       expect(screen.getByText('Signup Page')).toBeInTheDocument();
     });
 
-    it('renders ForgotPasswordPage at /forgot', () => {
-      renderAt('/forgot', false);
+    it('renders ForgotPasswordPage at /forgot-password', () => {
+      renderAt('/forgot-password', false);
       expect(screen.getByText('Forgot Password Page')).toBeInTheDocument();
     });
 

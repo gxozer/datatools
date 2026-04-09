@@ -63,7 +63,7 @@ export class ApiClient {
   /**
    * Register a new user account.
    */
-  static async signup(fullName: string, email: string, password: string): Promise<{ status: string }> {
+  static async signup(fullName: string, email: string, password: string): Promise<{ token: string; status: string }> {
     const response = await fetch('/api/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

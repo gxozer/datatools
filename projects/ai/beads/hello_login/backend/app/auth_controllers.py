@@ -6,6 +6,7 @@ with the OO conventions used in controllers.py.
 """
 
 import hashlib
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -229,10 +230,17 @@ class PasswordResetController:
             db.session.flush()  # assign PK before sending — rolled back on mail failure
 
             try:
+                frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+                reset_url = f"{frontend_url}/reset-password?token={raw_token}"
                 msg = Message(
-                    subject="Password Reset",
+                    subject="Reset your password",
                     recipients=[email],
-                    body=f"Use this token to reset your password: {raw_token}\nExpires in 1 hour.",
+                    body=(
+                        f"Hi {user.full_name},\n\n"
+                        f"Click the link below to reset your password:\n\n"
+                        f"{reset_url}\n\n"
+                        f"This link expires in 1 hour. If you didn't request a reset, ignore this email."
+                    ),
                 )
                 mail.send(msg)
                 db.session.commit()

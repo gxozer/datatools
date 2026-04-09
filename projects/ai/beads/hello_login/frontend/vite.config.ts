@@ -5,9 +5,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    // Proxy /api requests to the Flask backend during development
+    // Proxy /api requests to the Flask backend during development.
+    // Override the target port via VITE_BACKEND_PORT env var for E2E tests.
     proxy: {
-      '/api': 'http://localhost:5001',
+      '/api': `http://localhost:${process.env.VITE_BACKEND_PORT ?? '5001'}`,
     },
   },
   test: {
