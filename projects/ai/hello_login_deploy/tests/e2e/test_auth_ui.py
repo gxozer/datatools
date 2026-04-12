@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -19,12 +20,17 @@ from playwright.sync_api import Page, expect
 BACKEND_PORT = 5002
 FRONTEND_PORT = 5175
 
-BASE_URL = f"http://localhost:{FRONTEND_PORT}"
+# When E2E_BASE_URL is set (e.g. for docker-compose testing), skip starting
+# local servers and point Playwright at the running stack instead.
+_EXTERNAL_URL = os.environ.get("E2E_BASE_URL", "").rstrip("/")
+BASE_URL = _EXTERNAL_URL if _EXTERNAL_URL else f"http://localhost:{FRONTEND_PORT}"
 
-# A test user shared across the session-scoped signup fixture
+# A test user shared across the session — unique email per run avoids conflicts
+# with persistent databases (e.g. docker-compose volume).
+_RUN_ID = uuid.uuid4().hex[:8]
 TEST_USER = {
     "full_name": "Alice Auth",
-    "email": "alice.auth@example.com",
+    "email": f"alice.auth.{_RUN_ID}@example.com",
     "password": "Password1!",
 }
 
@@ -35,7 +41,13 @@ TEST_USER = {
 
 @pytest.fixture(scope="session")
 def auth_backend(tmp_path_factory):
-    """Start a Flask backend with a fresh temporary SQLite DB."""
+    """Start a Flask backend with a fresh temporary SQLite DB.
+    No-op when E2E_BASE_URL is set (external stack is already running).
+    """
+    if _EXTERNAL_URL:
+        yield None
+        return
+
     db_path = tmp_path_factory.mktemp("e2e_db") / "e2e.db"
     server_env = {
         **os.environ,
@@ -67,7 +79,13 @@ def auth_backend(tmp_path_factory):
 
 @pytest.fixture(scope="session")
 def auth_frontend(auth_backend):
-    """Start the Vite dev server pointing at the auth backend."""
+    """Start the Vite dev server pointing at the auth backend.
+    No-op when E2E_BASE_URL is set (external stack is already running).
+    """
+    if _EXTERNAL_URL:
+        yield None
+        return
+
     proc = subprocess.Popen(
         ["npm", "run", "dev", "--", "--port", str(FRONTEND_PORT), "--strictPort"],
         cwd="frontend",
@@ -118,7 +136,7 @@ class TestAuthFlows:
     def test_login_flow(self, auth_frontend, page: Page):
         """Sign up, log out, then log back in and verify the greeting."""
         # Sign up (creates the user in the session DB)
-        signup(page, "Bob Login", "bob.login@example.com", TEST_USER["password"])
+        signup(page, "Bob Login", f"bob.login.{_RUN_ID}@example.com", TEST_USER["password"])
         expect(page).to_have_url(f"{BASE_URL}/hello")
 
         # Log out
@@ -138,7 +156,7 @@ class TestAuthFlows:
 
     def test_forgot_password(self, auth_frontend, page: Page):
         """Submitting the forgot-password form always shows a success message."""
-        page.goto(f"{BASE_URL}/forgot")
+        page.goto(f"{BASE_URL}/forgot-password")
         page.get_by_label("Email").fill(TEST_USER["email"])
         page.get_by_role("button", name=re.compile(r"send|reset|submit", re.I)).first.click()
         expect(page.get_by_role("main")).to_contain_text(

@@ -22,3 +22,18 @@ test-backend-unit: build-backend
 
 test-frontend: build-frontend
 	container-structure-test test --image hello-login-frontend --config tests/container/frontend.yaml
+
+test-frontend-unit: build-frontend
+	docker run --rm hello-login-frontend sh -c "echo 'Vitest runs inside docker build — see build logs'"
+
+compose-up:
+	docker compose up -d
+
+compose-down:
+	docker compose down
+
+test-e2e-docker:
+	docker compose down -v
+	docker compose up -d
+	sleep 3
+	E2E_BASE_URL=http://localhost:3000 pytest tests/e2e/ -v

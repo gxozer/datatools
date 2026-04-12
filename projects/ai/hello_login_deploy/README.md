@@ -34,13 +34,66 @@ HelloController → Response
 
 ## Prerequisites
 
+**To run with Docker (recommended):**
+- Docker Desktop 4.x+
+
+**To run locally:**
 - Python 3.11+
 - Node.js 18+
 - npm 9+
 
 ---
 
-## Setup
+## Running with Docker
+
+The fastest way to get the full stack running is with Docker Compose.
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/gxozer/datatools.git
+cd datatools/projects/ai/hello_login_deploy
+```
+
+### 2. Start the stack
+
+```bash
+docker compose up -d
+```
+
+This will:
+- Pull/build the Flask backend image (runs Alembic migrations on startup)
+- Pull/build the React/nginx frontend image
+- Start both services and wire them together
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### 3. Stop the stack
+
+```bash
+docker compose down       # keep the database volume
+docker compose down -v    # also delete the database
+```
+
+### Environment variables (optional)
+
+To use a custom JWT secret or enable real email sending, create a `.env` file in the project root:
+
+```bash
+JWT_SECRET=your-32-char-secret-here
+MAIL_SERVER=smtp-relay.brevo.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=your-brevo-email@example.com
+MAIL_PASSWORD=your-brevo-smtp-key
+MAIL_DEFAULT_SENDER=your-brevo-email@example.com
+```
+
+By default `JWT_SECRET` uses a built-in development value and email sending is suppressed.
+
+---
+
+## Setup (local development)
 
 ### 1. Clone the repository
 
@@ -139,8 +192,30 @@ See [TESTING.md](TESTING.md) for full instructions. Quick start:
 # Backend tests (unit + integration)
 backend/.venv/bin/python -m pytest tests/unit/ tests/integration/ -v
 
-# Frontend tests
+# Frontend tests (also run inside docker build automatically)
 cd frontend && npm test
+
+# Container structure tests (requires images to be built first)
+make test-containers
+
+# E2E tests against the containerized stack
+make test-e2e-docker
+```
+
+### Container test infrastructure
+
+Container specs live in `tests/container/` and use [container-structure-test](https://github.com/GoogleContainerTools/container-structure-test):
+
+```bash
+brew install container-structure-test   # one-time install
+make test-backend                        # backend image specs
+make test-frontend                       # frontend image specs
+```
+
+To verify the container test infrastructure is set up correctly:
+
+```bash
+bash tests/container/verify_setup.sh
 ```
 
 ---
@@ -198,33 +273,43 @@ SELECT * FROM password_reset_tokens;
 ## Project Structure
 
 ```
-hello_login/
+hello_login_deploy/
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py           # Package entry point
 │   │   ├── factory.py            # Flask app factory (create_app)
 │   │   ├── auth.py               # Auth class: generate_token, require_auth
-│   │   ├── auth_controllers.py   # LoginController
+│   │   ├── auth_controllers.py   # LoginController, SignupController, etc.
 │   │   ├── controllers.py        # HelloController, HealthController
 │   │   ├── models.py             # User, LoginAttempt, PasswordResetToken
 │   │   └── routes.py             # API Blueprint and URL rules
+│   ├── Dockerfile            # Backend container image
+│   ├── entrypoint.sh         # Runs migrations then starts Flask
 │   ├── run.py                # Entry point
 │   ├── requirements.txt      # Runtime dependencies
 │   └── requirements-dev.txt  # Dev/test dependencies
 ├── frontend/
 │   ├── src/
 │   │   ├── api/
-│   │   │   └── ApiClient.ts  # HTTP client class
+│   │   │   └── ApiClient.ts      # HTTP client class
 │   │   ├── components/
 │   │   │   └── HelloMessage.tsx  # Presentational component
-│   │   ├── test/             # Vitest unit tests
-│   │   └── App.tsx           # Root component
-│   └── vite.config.ts        # Vite config with /api proxy
+│   │   ├── test/                 # Vitest unit tests
+│   │   └── App.tsx               # Root component
+│   ├── Dockerfile            # Multi-stage: build (Vitest) + nginx serve
+│   ├── nginx.conf.template   # nginx config with /api proxy + SPA routing
+│   └── vite.config.ts        # Vite config with /api proxy (dev only)
 ├── tests/
 │   ├── conftest.py           # Shared pytest fixtures
 │   ├── unit/                 # Controller unit tests
 │   ├── integration/          # API integration tests
-│   └── e2e/                  # Playwright end-to-end tests
+│   ├── e2e/                  # Playwright end-to-end tests
+│   └── container/            # container-structure-test specs
+│       ├── backend.yaml
+│       ├── frontend.yaml
+│       └── verify_setup.sh
+├── docker-compose.yml        # Wires backend + frontend for one-command startup
+├── Makefile                  # Build, test, and compose targets
 ├── pytest.ini                # Pytest configuration
 ├── TESTING.md                # Full testing instructions
 └── README.md                 # This file

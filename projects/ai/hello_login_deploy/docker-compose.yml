@@ -1,0 +1,25 @@
+services:
+  backend:
+    build: ./backend
+    image: hello-login-backend
+    ports:
+      - "5001:5001"
+    environment:
+      - FLASK_DEBUG=false
+      - MAIL_SUPPRESS_SEND=1
+      - JWT_SECRET=${JWT_SECRET:-docker-compose-dev-secret-32-bytes!}
+    volumes:
+      - db_data:/app/instance
+
+  frontend:
+    build: ./frontend
+    image: hello-login-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - BACKEND_HOST=backend
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
