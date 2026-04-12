@@ -1,9 +1,24 @@
-.PHONY: test-containers test-backend test-frontend
+.PHONY: test-containers test-backend test-frontend build-backend build-frontend test-backend-unit
 
 test-containers: test-backend test-frontend
 
-test-backend:
+build-backend:
+	docker build -t hello-login-backend ./backend
+
+build-frontend:
+	docker build -t hello-login-frontend ./frontend
+
+test-backend: build-backend
 	container-structure-test test --image hello-login-backend --config tests/container/backend.yaml
 
-test-frontend:
+test-backend-unit: build-backend
+	docker run --rm \
+		-e JWT_SECRET=test-secret \
+		-e TESTING=true \
+		-v $(PWD)/tests:/app/tests \
+		-v $(PWD)/pytest.ini:/app/pytest.ini \
+		hello-login-backend \
+		sh -c "pip install -q pytest pytest-cov && PYTHONPATH=/app pytest tests/unit tests/integration --tb=short -q"
+
+test-frontend: build-frontend
 	container-structure-test test --image hello-login-frontend --config tests/container/frontend.yaml
