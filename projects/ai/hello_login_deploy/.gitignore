@@ -1,0 +1,36 @@
+
+.idea
+# Dolt database files (added by bd init)
+.dolt/
+*.db
+
+# Beads backup (may contain secrets like API tokens)
+.beads/backup/
+
+# Python
+backend/.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.env
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+playwright-report/
+test-results/
+
+# OS
+.DS_Store

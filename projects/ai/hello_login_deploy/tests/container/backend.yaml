@@ -1,0 +1,31 @@
+schemaVersion: "2.0.0"
+
+# Container structure tests for the Flask backend image.
+# These specs are written before the Dockerfile exists (TDD red phase).
+# Run with: container-structure-test test --image hello-login-backend --config tests/container/backend.yaml
+
+fileExistenceTests:
+  - name: "requirements.txt is present in image"
+    path: "/app/requirements.txt"
+    shouldExist: true
+
+  - name: "app package is present"
+    path: "/app/app"
+    shouldExist: true
+
+  - name: ".venv is NOT present (excluded by .dockerignore)"
+    path: "/app/.venv"
+    shouldExist: false
+
+metadataTest:
+  exposedPorts: ["5001"]
+  envVars:
+    - key: "FLASK_ENV"
+      value: "production"
+
+commandTests:
+  - name: "Flask app responds on health endpoint"
+    setup: [["sleep", "1"]]
+    command: "curl"
+    args: ["-sf", "http://localhost:5001/api/health"]
+    expectedOutput: ["ok"]
