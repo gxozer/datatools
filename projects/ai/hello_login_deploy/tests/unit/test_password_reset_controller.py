@@ -259,3 +259,35 @@ class TestConfirmReset:
         ):
             _, status = _unpack(PasswordResetController.confirm_reset())
             assert status == 400
+
+    def test_short_password_returns_400(self, app, db_session):
+        """confirm_reset() with a password shorter than 8 chars should return 400."""
+        user = _create_user(db_session)
+        raw = _create_reset_token(db_session, user)
+        with app.test_request_context(
+            "/api/password-reset/confirm", method="POST",
+            json={"token": raw, "password": "short"},
+        ):
+            _, status = _unpack(PasswordResetController.confirm_reset())
+            assert status == 400
+
+    def test_deleted_user_returns_400(self, app, db_session):
+        """confirm_reset() should return 400 if the user no longer exists."""
+        user = _create_user(db_session)
+        raw = _create_reset_token(db_session, user)
+        # Simulate user deleted after token was issued by patching the lookup to return None
+        with app.test_request_context(
+            "/api/password-reset/confirm", method="POST",
+            json={"token": raw, "password": "newpassword1"},
+        ):
+            with patch("app.auth_controllers.db.session.query") as mock_query:
+                # First call (PasswordResetToken lookup) returns the real token,
+                # second call (User lookup) returns None.
+                real_token = db_session.query(PasswordResetToken).filter_by(
+                    user_id=user.id
+                ).first()
+                mock_query.return_value.filter_by.return_value.first.side_effect = [
+                    real_token, None
+                ]
+                _, status = _unpack(PasswordResetController.confirm_reset())
+            assert status == 400

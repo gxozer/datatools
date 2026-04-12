@@ -285,7 +285,13 @@ class PasswordResetController:
         if reset_token.expires_at.replace(tzinfo=timezone.utc) < now:
             return jsonify({"error": "Invalid or expired reset token", "status": "error"}), 400
 
+        if len(new_password) < SignupController._MIN_PASSWORD_LENGTH:
+            return jsonify({"error": "Password must be at least 8 characters", "status": "error"}), 400
+
         user = db.session.query(User).filter_by(id=reset_token.user_id).first()
+        if user is None:
+            return jsonify({"error": "Invalid or expired reset token", "status": "error"}), 400
+
         user.hashed_password = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
         reset_token.used = True
         db.session.commit()
