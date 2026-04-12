@@ -1,0 +1,84 @@
+"""
+factory.py — Flask application factory.
+
+AppFactory.create() builds and returns a configured Flask instance.
+Using a class keeps the pattern consistent with the OO conventions
+used in controllers.py and routes.py.
+"""
+
+import os
+from flask import Flask
+from flask_cors import CORS
+from dotenv import load_dotenv
+
+from .database import db, mail
+from .routes import Router
+
+
+class AppFactory:
+    @staticmethod
+    def create(test_config: dict | None = None) -> Flask:
+        """
+        Create and configure the Flask application.
+
+        Loads environment variables from a .env file (if present), registers
+        blueprints, and enables CORS for the React dev server.
+
+        Args:
+            test_config: Optional dict of config overrides for testing.
+                         When provided, JWT_SECRET validation is skipped if
+                         TESTING is True in the supplied config.
+
+        Returns:
+            Flask: The configured Flask application instance.
+        """
+        # Load environment variables from .env file if it exists
+        load_dotenv()
+
+        app = Flask(__name__)
+
+        # Apply test overrides first so TESTING flag is available below
+        if test_config:
+            app.config.update(test_config)
+
+        # Database config — schema is managed by Alembic, not create_all()
+        app.config.setdefault(
+            "SQLALCHEMY_DATABASE_URI",
+            os.environ.get("DATABASE_URL", "sqlite:///app.db"),
+        )
+        app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+        # Auth config — JWT_SECRET is required in non-test environments
+        jwt_secret = app.config.get("JWT_SECRET") or os.environ.get("JWT_SECRET", "")
+        if not jwt_secret and not app.config.get("TESTING"):
+            raise RuntimeError(
+                "JWT_SECRET environment variable must be set. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        app.config["JWT_SECRET"] = jwt_secret
+
+        # Mail config — configure via env vars; suppress sends in testing
+        app.config.setdefault("MAIL_SERVER", os.environ.get("MAIL_SERVER", "localhost"))
+        app.config.setdefault("MAIL_PORT", int(os.environ.get("MAIL_PORT", 587)))
+        app.config.setdefault("MAIL_USE_TLS", os.environ.get("MAIL_USE_TLS", "true").lower() in ("1", "true", "yes"))
+        app.config.setdefault("MAIL_USERNAME", os.environ.get("MAIL_USERNAME", ""))
+        app.config.setdefault("MAIL_PASSWORD", os.environ.get("MAIL_PASSWORD", ""))
+        app.config.setdefault("MAIL_DEFAULT_SENDER", os.environ.get("MAIL_DEFAULT_SENDER", "noreply@example.com"))
+        suppress_env = os.environ.get("MAIL_SUPPRESS_SEND", "").lower() in ("1", "true", "yes")
+        app.config.setdefault("MAIL_SUPPRESS_SEND", suppress_env or app.config.get("TESTING", False))
+
+        # Initialise extensions
+        db.init_app(app)
+        mail.init_app(app)
+
+        # Allow requests from the React dev server (localhost:5173 for Vite)
+        CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
+
+        # Register API routes
+        Router.register(app)
+
+        return app
+
+
+# Module-level alias for backwards compatibility with run.py and conftest.py
+create_app = AppFactory.create
