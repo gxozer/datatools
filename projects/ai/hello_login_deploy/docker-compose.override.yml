@@ -1,0 +1,19 @@
+# Debug override — starts Flask under debugpy and waits for a debugger to attach.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml up
+#
+# Then attach your IDE to localhost:5678.
+# Flask will not serve requests until the debugger connects.
+
+services:
+  backend:
+    build:
+      context: ./backend
+      target: debug
+    ports:
+      - "4444:4444"
+    environment:
+      - FLASK_DEBUG=true
+      - REMOTE_PDB_HOST=0.0.0.0
+      - REMOTE_PDB_PORT=4444

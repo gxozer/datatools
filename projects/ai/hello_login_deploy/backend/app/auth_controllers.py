@@ -122,7 +122,6 @@ class SignupController:
             409 if the email is already registered.
         """
         data = request.get_json(silent=True) or {}
-
         full_name = data.get("full_name")
         email = data.get("email")
         password = data.get("password")

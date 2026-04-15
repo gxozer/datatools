@@ -230,6 +230,57 @@ bash tests/container/verify_setup.sh
 4. Click **🐛 Debug** (or press Shift+F9) to start the server in debug mode
 5. Trigger the endpoint from the browser — PyCharm pauses at your breakpoint with the full debugger UI (variables, call stack, step controls)
 
+### Backend — Docker (remote-pdb)
+
+`remote-pdb` is a step-through debugger that runs inside the container and accepts connections over TCP on port 4444.
+
+**1. Add a breakpoint in code**
+
+```python
+import remote_pdb; remote_pdb.set_trace()
+```
+
+**2. Start the stack with the debug overlay**
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --build
+```
+
+**3. Trigger the request** (e.g. submit the signup form). The process will freeze waiting for a connection.
+
+**4. Connect from a terminal**
+
+```bash
+nc localhost 4444
+```
+
+You land in a pdb prompt with the full call stack:
+
+```
+> /app/app/auth_controllers.py(45)signup()
+-> data = request.get_json()
+(Pdb)
+```
+
+**Useful commands**
+
+| Command | Action |
+|---------|--------|
+| `n` | Next line (stay in current function) |
+| `s` | Step into function call |
+| `r` | Run until current function returns |
+| `c` | Continue to next breakpoint |
+| `p expr` | Print expression — `p data`, `p request.method` |
+| `pp expr` | Pretty-print (dicts, lists) |
+| `l` | Show surrounding source |
+| `ll` | Show full current function |
+| `w` | Call stack |
+| `u` / `d` | Move up/down the call stack |
+| `b 72` | Set breakpoint at line 72 |
+| `q` | Quit (request fails with 500, server keeps running) |
+
+> Port 4444 is only exposed when using the override file. Remove `set_trace()` calls before committing — they will block requests indefinitely.
+
 ### Backend — terminal (pdb)
 
 Add `breakpoint()` anywhere in the code, then run the server normally:
@@ -252,11 +303,29 @@ When execution reaches that line the terminal drops into a `pdb` prompt:
 
 ## Inspecting the Database
 
+### Local development
+
 ```bash
 sqlite3 backend/instance/app.db
 ```
 
-Useful commands:
+### Docker
+
+The database lives inside the Docker volume, not on your local filesystem. The slim image does not include the `sqlite3` CLI — use Python's built-in module instead:
+
+```bash
+docker exec -it hello_login_deploy-backend-1 python -c "
+import sqlite3
+conn = sqlite3.connect('/app/instance/app.db')
+conn.row_factory = sqlite3.Row
+rows = conn.execute('SELECT * FROM users').fetchall()
+for r in rows: print(dict(r))
+"
+```
+
+Replace `users` with `login_attempts` or `password_reset_tokens` to query other tables.
+
+### Useful SQL commands
 
 ```sql
 .tables                           -- list all tables
@@ -309,6 +378,7 @@ hello_login_deploy/
 │       ├── frontend.yaml
 │       └── verify_setup.sh
 ├── docker-compose.yml        # Wires backend + frontend for one-command startup
+├── docker-compose.override.yml  # Debug overlay: exposes remote-pdb on port 4444
 ├── Makefile                  # Build, test, and compose targets
 ├── pytest.ini                # Pytest configuration
 ├── TESTING.md                # Full testing instructions
