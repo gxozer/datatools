@@ -430,10 +430,10 @@ hello_login_deploy/
 ├── docker-compose.yml        # Wires backend + frontend for one-command startup
 ├── docker-compose.override.yml  # Debug overlay: exposes remote-pdb on port 4444
 ├── Makefile                  # Build, test, and compose targets
-├── .github/
-│   └── workflows/
-│       └── hello-login-ci.yml  # GitHub Actions CI pipeline
 ├── pytest.ini                # Pytest configuration
 ├── TESTING.md                # Full testing instructions
 └── README.md                 # This file
+
+# CI pipeline lives at the repo root (not inside this directory):
+# .github/workflows/hello-login-ci.yml
 ```
