@@ -1,0 +1,27 @@
+services:
+  backend:
+    build: ./backend
+    image: hello-login-backend
+    ports:
+      - "5001:5001"
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      - FLASK_DEBUG=false
+      - MAIL_SUPPRESS_SEND=${MAIL_SUPPRESS_SEND:-1}
+    volumes:
+      - db_data:/app/instance
+
+  frontend:
+    build: ./frontend
+    image: hello-login-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - BACKEND_HOST=backend
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
