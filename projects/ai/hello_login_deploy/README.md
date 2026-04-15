@@ -224,6 +224,50 @@ To verify the container test infrastructure is set up correctly:
 bash tests/container/verify_setup.sh
 ```
 
+### CI (GitHub Actions)
+
+All tests run automatically on every push or pull request that touches files under `projects/ai/hello_login_deploy/`. The pipeline is defined in `.github/workflows/hello-login-ci.yml`.
+
+#### Pipeline jobs
+
+| Job | Trigger | What it runs |
+|-----|---------|-------------|
+| Backend unit + integration | every push/PR | `pytest tests/unit/ tests/integration/` |
+| Backend container | every push/PR | `docker build` → container-structure-test |
+| Frontend container | every push/PR | `docker build` (includes Vitest) → container-structure-test |
+| E2E tests | after both container jobs pass | `docker compose up` → Playwright against the live stack |
+
+#### Viewing results
+
+1. Go to [github.com/gxozer/datatools/actions](https://github.com/gxozer/datatools/actions)
+2. Click the workflow run to see all jobs
+3. Click any job to see step-by-step logs
+4. Failed steps are highlighted in red with the full error output
+
+On a pull request, results appear directly on the PR page — all jobs must pass before merging.
+
+#### Adding secrets
+
+If the workflow needs credentials (e.g. for future AWS deployment steps), add them as GitHub secrets:
+
+1. Go to **Settings → Secrets and variables → Actions**
+2. Click **New repository secret**
+3. Reference in the workflow as `${{ secrets.MY_SECRET }}`
+
+Never hardcode credentials in the workflow file.
+
+#### Testing the pipeline locally
+
+Use [`act`](https://github.com/nektos/act) to run the workflow on your machine without pushing to GitHub:
+
+```bash
+brew install act   # one-time install
+cd /path/to/datatools
+act push --workflows .github/workflows/hello-login-ci.yml
+```
+
+`act` runs jobs inside Docker containers that mirror GitHub's runners. Some features (e.g. caching) behave slightly differently locally — treat it as a fast smoke test before pushing.
+
 ---
 
 ## Debugging
@@ -386,6 +430,9 @@ hello_login_deploy/
 ├── docker-compose.yml        # Wires backend + frontend for one-command startup
 ├── docker-compose.override.yml  # Debug overlay: exposes remote-pdb on port 4444
 ├── Makefile                  # Build, test, and compose targets
+├── .github/
+│   └── workflows/
+│       └── hello-login-ci.yml  # GitHub Actions CI pipeline
 ├── pytest.ini                # Pytest configuration
 ├── TESTING.md                # Full testing instructions
 └── README.md                 # This file
