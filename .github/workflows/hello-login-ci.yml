@@ -81,6 +81,8 @@ jobs:
     name: E2E tests (docker-compose stack)
     runs-on: ubuntu-latest
     needs: [backend-container, frontend-container]
+    env:
+      JWT_SECRET: ci-only-test-secret-not-used-in-production
     steps:
       - uses: actions/checkout@v4
 
