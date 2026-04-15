@@ -1,4 +1,4 @@
-.PHONY: test-containers test-backend test-frontend build-backend build-frontend test-backend-unit
+.PHONY: test-containers test-backend test-frontend build-backend build-frontend test-backend-unit compose-up compose-down test-e2e-docker
 
 test-containers: test-backend test-frontend
 
@@ -23,9 +23,6 @@ test-backend-unit: build-backend
 test-frontend: build-frontend
 	container-structure-test test --image hello-login-frontend --config tests/container/frontend.yaml
 
-test-frontend-unit: build-frontend
-	docker run --rm hello-login-frontend sh -c "echo 'Vitest runs inside docker build — see build logs'"
-
 compose-up:
 	docker compose up -d
 
@@ -35,5 +32,5 @@ compose-down:
 test-e2e-docker:
 	docker compose down -v
 	docker compose up -d
-	sleep 3
+	until curl -sf http://localhost:3000/api/health; do sleep 1; done
 	E2E_BASE_URL=http://localhost:3000 pytest tests/e2e/ -v

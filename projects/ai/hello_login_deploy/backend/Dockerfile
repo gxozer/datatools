@@ -22,4 +22,4 @@ FROM base AS debug
 COPY requirements-dev.txt .
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
-EXPOSE 5678
+EXPOSE 4444

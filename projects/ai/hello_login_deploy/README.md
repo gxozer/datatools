@@ -77,7 +77,13 @@ docker compose down -v    # also delete the database
 
 ### Environment variables (optional)
 
-To use a custom JWT secret or enable real email sending, create a `.env` file in the project root:
+To use a custom JWT secret or enable real email sending, copy the example file and fill in your values:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Then edit `backend/.env`:
 
 ```bash
 JWT_SECRET=your-32-char-secret-here
@@ -89,7 +95,7 @@ MAIL_PASSWORD=your-brevo-smtp-key
 MAIL_DEFAULT_SENDER=your-brevo-email@example.com
 ```
 
-By default `JWT_SECRET` uses a built-in development value and email sending is suppressed.
+By default `JWT_SECRET` uses a built-in development value and email sending is suppressed. The `backend/.env` file is optional — the stack starts without it.
 
 ---
 

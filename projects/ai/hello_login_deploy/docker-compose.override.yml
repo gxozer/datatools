@@ -1,10 +1,10 @@
-# Debug override — starts Flask under debugpy and waits for a debugger to attach.
+# Debug overlay — enables remote-pdb inside the container on port 4444.
 #
 # Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.override.yml up
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --build
 #
-# Then attach your IDE to localhost:5678.
-# Flask will not serve requests until the debugger connects.
+# Add a breakpoint in code: import remote_pdb; remote_pdb.set_trace()
+# Then connect: nc localhost 4444
 
 services:
   backend:
