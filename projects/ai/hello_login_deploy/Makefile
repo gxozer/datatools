@@ -15,8 +15,8 @@ test-backend-unit: build-backend
 	docker run --rm \
 		-e JWT_SECRET=test-secret \
 		-e TESTING=true \
-		-v $(PWD)/tests:/app/tests \
-		-v $(PWD)/pytest.ini:/app/pytest.ini \
+		-v $(CURDIR)/tests:/app/tests \
+		-v $(CURDIR)/pytest.ini:/app/pytest.ini \
 		hello-login-backend \
 		sh -c "pip install -q pytest pytest-cov && PYTHONPATH=/app pytest tests/unit tests/integration --tb=short -q"
 

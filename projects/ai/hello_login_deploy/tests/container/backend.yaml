@@ -57,3 +57,8 @@ commandTests:
     command: "python"
     args: ["-c", "import jwt; print('ok')"]
     expectedOutput: ["ok"]
+
+  - name: "process runs as non-root user"
+    command: "python"
+    args: ["-c", "import os; assert os.getuid() != 0, 'running as root'; print('ok')"]
+    expectedOutput: ["ok"]
