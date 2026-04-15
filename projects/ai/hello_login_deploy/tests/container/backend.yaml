@@ -21,9 +21,9 @@ fileExistenceTests:
     path: "/app/.venv"
     shouldExist: false
 
-  - name: "instance/ is NOT present (excluded by .dockerignore)"
+  - name: "instance/ is present (volume mount point, owned by app)"
     path: "/app/instance"
-    shouldExist: false
+    shouldExist: true
 
   - name: ".env is NOT present (excluded by .dockerignore)"
     path: "/app/.env"

@@ -13,6 +13,7 @@ COPY . .
 RUN chmod +x entrypoint.sh \
     && addgroup --system app \
     && adduser --system --ingroup app app \
+    && mkdir -p /app/instance \
     && chown -R app:app /app
 
 USER app
