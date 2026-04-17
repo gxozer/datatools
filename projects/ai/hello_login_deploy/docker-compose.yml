@@ -8,8 +8,9 @@ services:
       - path: ./backend/.env
         required: false
     environment:
-      - FLASK_DEBUG=false
+      - FLASK_DEBUG=0
       - MAIL_SUPPRESS_SEND=${MAIL_SUPPRESS_SEND:-1}
+      - JWT_SECRET=${JWT_SECRET:-dev-only-secret-change-for-production-32c}
     volumes:
       - db_data:/app/instance
 
