@@ -11,7 +11,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from flask import current_app, jsonify, request
+from flask import current_app, g, jsonify, request
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from flask_mail import Message
 
@@ -183,7 +183,6 @@ class LogoutController:
         Returns:
             200 always (require_auth returns 401 before we get here).
         """
-        from flask import g
         jti = g.current_user.get("jti")
         if jti:
             exp = g.current_user.get("exp")

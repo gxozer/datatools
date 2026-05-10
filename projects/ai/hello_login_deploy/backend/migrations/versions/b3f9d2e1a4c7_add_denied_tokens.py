@@ -24,7 +24,6 @@ def upgrade() -> None:
         sa.Column('jti', sa.String(length=36), nullable=False),
         sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('jti'),
     )
     op.create_index(op.f('ix_denied_tokens_jti'), 'denied_tokens', ['jti'], unique=True)
 
