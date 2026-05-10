@@ -34,6 +34,14 @@ class LoginAttempt(db.Model):
     success = db.Column(db.Boolean, nullable=False)
 
 
+class DeniedToken(db.Model):
+    __tablename__ = "denied_tokens"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    jti = db.Column(db.String(36), nullable=False, unique=True, index=True)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+
+
 class PasswordResetToken(db.Model):
     __tablename__ = "password_reset_tokens"
 

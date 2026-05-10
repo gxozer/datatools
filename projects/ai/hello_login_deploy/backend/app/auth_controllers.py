@@ -11,16 +11,16 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from flask import current_app, jsonify, request
+from flask import current_app, g, jsonify, request
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from flask_mail import Message
 
 from .auth import Auth
 from .database import db, mail
-from .models import LoginAttempt, PasswordResetToken, User
+from .models import DeniedToken, LoginAttempt, PasswordResetToken, User
 
-_LOCKOUT_WINDOW_MINUTES = 15
-_LOCKOUT_THRESHOLD = 5
+_LOCKOUT_WINDOW_MINUTES = int(os.environ.get("LOCKOUT_WINDOW_MINUTES", 15))
+_LOCKOUT_THRESHOLD = int(os.environ.get("MAX_LOGIN_ATTEMPTS", 5))
 
 # Precomputed dummy hash used when the email is not found.
 # Always running bcrypt.checkpw() (even against this dummy) prevents timing
@@ -176,14 +176,21 @@ class LogoutController:
         Log out the current user.
 
         Auth is enforced by Auth.require_auth at the route level, so this
-        method is only reached with a valid JWT. JWTs are stateless — there
-        is no server-side session to destroy. A token denylist (e.g. Redis
-        set keyed by jti with TTL matching token expiry) would be inserted
-        here if revocation is needed in the future.
+        method is only reached with a valid JWT. Adds the token's jti to the
+        denied_tokens table so require_auth rejects it on future requests.
+        Expired rows are pruned on each logout to keep the table bounded.
 
         Returns:
             200 always (require_auth returns 401 before we get here).
         """
+        jti = g.current_user.get("jti")
+        if jti:
+            exp = g.current_user.get("exp")
+            expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+            db.session.add(DeniedToken(jti=jti, expires_at=expires_at))
+            now = datetime.now(timezone.utc)
+            db.session.query(DeniedToken).filter(DeniedToken.expires_at < now).delete()
+            db.session.commit()
         return jsonify({"message": "Logged out successfully.", "status": "ok"}), 200
 
 
