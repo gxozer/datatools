@@ -71,8 +71,14 @@ class AppFactory:
         db.init_app(app)
         mail.init_app(app)
 
-        # Allow requests from the React dev server (localhost:5173 for Vite)
-        CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
+        # CORS origins — configurable via CORS_ORIGINS env var (comma-separated)
+        cors_origins = [
+            o.strip()
+            for o in os.environ.get(
+                "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"
+            ).split(",")
+        ]
+        CORS(app, origins=cors_origins)
 
         # Register API routes
         Router.register(app)
