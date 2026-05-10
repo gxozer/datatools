@@ -1,12 +1,13 @@
 # Shared Memories
 
+## Git
+
+Never commit or push. Show the diff and describe what would be committed, then wait for the user to explicitly say "commit" or "push".
+
 ## PR Reviews
 
 When reviewing a PR, always post review comments directly to the PR using `gh pr review <url> --comment --body "..."`. Do NOT only report findings in the chat.
 
-## Beads
+## Jira
 
-### Epic Parenting
-When attaching tickets to an epic, use `bd update <id> --parent=<epic-id>`.
-Do NOT use `bd dep add` — it fails with "tasks can only block other tasks, not epics".
-The parent/child relationship and the dependency system are separate in beads.
+Issue tracking is done via Jira MCP. Use the `mcp__jira__*` tools for all ticket management (create, update, transition, comment, etc.). Do NOT use beads (`bd`) commands.
