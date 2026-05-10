@@ -11,15 +11,6 @@ BASE_CONFIG = {
 }
 
 
-def _cors_origins(app):
-    """Extract the list of allowed origins from the app's CORS extension."""
-    from flask_cors import CORS  # noqa: F401 — imported to ensure extension is loaded
-    # flask-cors stores policy on app.extensions keyed by 'cors'
-    policy = app.extensions.get("cors", {})
-    # Access the origins from the policy; fall back to inspecting after_request handlers
-    # by making an OPTIONS request with an Origin header.
-    return policy
-
 
 def test_cors_default_origins(monkeypatch):
     monkeypatch.delenv("CORS_ORIGINS", raising=False)
