@@ -144,7 +144,7 @@ class TestAuthFlows:
         expect(page).to_have_url(f"{BASE_URL}/login")
 
         # Log back in
-        login(page, "bob.login@example.com", TEST_USER["password"])
+        login(page, f"bob.login.{_RUN_ID}@example.com", TEST_USER["password"])
         expect(page).to_have_url(f"{BASE_URL}/hello")
         expect(page.get_by_role("main")).to_contain_text("Hello")
 
