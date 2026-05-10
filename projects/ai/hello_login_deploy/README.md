@@ -309,39 +309,31 @@ When execution reaches that line the terminal drops into a `pdb` prompt:
 
 ## Inspecting the Database
 
-### Local development
+### MySQL (Docker)
+
+Connect to the MySQL container with an interactive shell:
 
 ```bash
-sqlite3 backend/instance/app.db
+docker compose exec mysql mysql -u hello -phello hello_login
 ```
 
-### Docker
-
-The database lives inside the Docker volume, not on your local filesystem. The slim image does not include the `sqlite3` CLI — use Python's built-in module instead:
+Or run a one-liner without an interactive session:
 
 ```bash
-docker exec -it hello_login_deploy-backend-1 python -c "
-import sqlite3
-conn = sqlite3.connect('/app/instance/app.db')
-conn.row_factory = sqlite3.Row
-rows = conn.execute('SELECT * FROM users').fetchall()
-for r in rows: print(dict(r))
-"
+docker compose exec mysql mysql -u hello -phello hello_login -e "SELECT * FROM users LIMIT 10;"
 ```
 
-Replace `users` with `login_attempts` or `password_reset_tokens` to query other tables.
-
-### Useful SQL commands
+Useful SQL commands once connected:
 
 ```sql
-.tables                           -- list all tables
-.mode column                      -- readable column layout
-.headers on                       -- show column names
+SHOW TABLES;
+DESCRIBE users;
 SELECT * FROM users;
 SELECT * FROM login_attempts;
 SELECT * FROM password_reset_tokens;
-.quit
+EXIT;
 ```
+
 
 ---
 
