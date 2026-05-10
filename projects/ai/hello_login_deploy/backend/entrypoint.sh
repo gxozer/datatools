@@ -5,16 +5,22 @@ set -e
 # No-op when DATABASE_URL is SQLite or unset.
 if echo "${DATABASE_URL:-}" | grep -q "mysql"; then
   echo "Waiting for MySQL..."
+  RETRIES=60
   until python -c "
 import os, sys, socket
-url = os.environ['DATABASE_URL']
-host = url.split('@')[1].split(':')[0].split('/')[0]
+from urllib.parse import urlparse
+host = urlparse(os.environ['DATABASE_URL']).hostname
 try:
     socket.create_connection((host, 3306), timeout=1).close()
     sys.exit(0)
 except OSError:
     sys.exit(1)
 "; do
+    RETRIES=$((RETRIES - 1))
+    if [ "$RETRIES" -le 0 ]; then
+      echo "MySQL did not become ready in time. Exiting." >&2
+      exit 1
+    fi
     sleep 1
   done
   echo "MySQL is ready."

@@ -1,5 +1,9 @@
 # Shared Memories
 
+## Git
+
+Never commit or push without explicit instruction from the user.
+
 ## PR Reviews
 
 When reviewing a PR, always post review comments directly to the PR using `gh pr review <url> --comment --body "..."`. Do NOT only report findings in the chat.
