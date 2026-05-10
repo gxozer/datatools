@@ -134,13 +134,14 @@ class TestGenerateToken:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def authed_client(app):
+def authed_client(app, db_session):
     """
     Flask test client with a dedicated protected route registered for
     testing the require_auth decorator in isolation.
 
     Uses /api/test-auth instead of /api/hello so decorator tests are
     decoupled from HelloController's own auth behaviour (beads3-9td).
+    db_session is required so the denied_tokens table exists for denylist checks.
     """
     from flask import jsonify
     from app.auth import Auth

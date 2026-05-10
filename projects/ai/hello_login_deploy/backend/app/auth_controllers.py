@@ -17,10 +17,10 @@ from flask_mail import Message
 
 from .auth import Auth
 from .database import db, mail
-from .models import LoginAttempt, PasswordResetToken, User
+from .models import DeniedToken, LoginAttempt, PasswordResetToken, User
 
-_LOCKOUT_WINDOW_MINUTES = 15
-_LOCKOUT_THRESHOLD = 5
+_LOCKOUT_WINDOW_MINUTES = int(os.environ.get("LOCKOUT_WINDOW_MINUTES", 15))
+_LOCKOUT_THRESHOLD = int(os.environ.get("MAX_LOGIN_ATTEMPTS", 5))
 
 # Precomputed dummy hash used when the email is not found.
 # Always running bcrypt.checkpw() (even against this dummy) prevents timing
@@ -184,6 +184,13 @@ class LogoutController:
         Returns:
             200 always (require_auth returns 401 before we get here).
         """
+        from flask import g
+        jti = g.current_user.get("jti") if hasattr(g, "current_user") else None
+        if jti:
+            exp = g.current_user.get("exp")
+            expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+            db.session.add(DeniedToken(jti=jti, expires_at=expires_at))
+            db.session.commit()
         return jsonify({"message": "Logged out successfully.", "status": "ok"}), 200
 
 

@@ -6,6 +6,7 @@ Auth.require_auth is a decorator that protects routes by validating the
 Authorization: Bearer <token> header and injecting g.current_user.
 """
 
+import uuid
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -28,6 +29,7 @@ class Auth:
             str: A signed HS256 JWT valid for 24 hours.
         """
         payload = {
+            "jti": str(uuid.uuid4()),
             "sub": str(user.id),
             "email": user.email,
             "full_name": user.full_name,
@@ -74,6 +76,13 @@ class Auth:
                 return jsonify({"error": "Token expired", "status": "error"}), 401
             except jwt.InvalidTokenError:
                 return jsonify({"error": "Invalid token", "status": "error"}), 401
+
+            jti = payload.get("jti")
+            if jti:
+                from .database import db
+                from .models import DeniedToken
+                if db.session.query(DeniedToken).filter_by(jti=jti).first():
+                    return jsonify({"error": "Token has been revoked", "status": "error"}), 401
 
             if allowed_roles is not None and payload.get("role") not in allowed_roles:
                 return jsonify({"error": "Forbidden", "status": "error"}), 403
