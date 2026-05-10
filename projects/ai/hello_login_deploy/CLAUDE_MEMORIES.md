@@ -2,7 +2,7 @@
 
 ## Git
 
-Never commit or push without explicit instruction from the user.
+Never commit or push. Show the diff and describe what would be committed, then wait for the user to explicitly say "commit" or "push".
 
 ## PR Reviews
 
