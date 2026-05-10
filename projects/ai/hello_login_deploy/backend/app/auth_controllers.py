@@ -176,20 +176,21 @@ class LogoutController:
         Log out the current user.
 
         Auth is enforced by Auth.require_auth at the route level, so this
-        method is only reached with a valid JWT. JWTs are stateless — there
-        is no server-side session to destroy. A token denylist (e.g. Redis
-        set keyed by jti with TTL matching token expiry) would be inserted
-        here if revocation is needed in the future.
+        method is only reached with a valid JWT. Adds the token's jti to the
+        denied_tokens table so require_auth rejects it on future requests.
+        Expired rows are pruned on each logout to keep the table bounded.
 
         Returns:
             200 always (require_auth returns 401 before we get here).
         """
         from flask import g
-        jti = g.current_user.get("jti") if hasattr(g, "current_user") else None
+        jti = g.current_user.get("jti")
         if jti:
             exp = g.current_user.get("exp")
             expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
             db.session.add(DeniedToken(jti=jti, expires_at=expires_at))
+            now = datetime.now(timezone.utc)
+            db.session.query(DeniedToken).filter(DeniedToken.expires_at < now).delete()
             db.session.commit()
         return jsonify({"message": "Logged out successfully.", "status": "ok"}), 200
 

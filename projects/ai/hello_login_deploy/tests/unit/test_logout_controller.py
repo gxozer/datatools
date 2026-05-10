@@ -3,12 +3,15 @@ test_logout_controller.py — Unit tests for LogoutController.
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from flask import g
 
 from app.auth_controllers import LogoutController
 from app.auth import Auth
-from app.models import User
+from app.models import DeniedToken, User
+from app.database import db
 import bcrypt
 
 
@@ -69,6 +72,26 @@ class TestTokenDenylist:
         )
         assert resp.status_code == 401
         assert resp.get_json()["error"] == "Token has been revoked"
+
+    def test_expired_denied_tokens_pruned_on_logout(self, client, app, db_session):
+        """Expired rows in denied_tokens are deleted when a new logout occurs."""
+        user = _make_user(db_session)
+        with app.app_context():
+            expired = DeniedToken(
+                jti=str(uuid.uuid4()),
+                expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+            )
+            db_session.add(expired)
+            db_session.flush()
+
+        token = Auth.generate_token(user)
+        client.post("/api/logout", headers={"Authorization": f"Bearer {token}"})
+
+        with app.app_context():
+            count = db_session.query(DeniedToken).filter(
+                DeniedToken.expires_at < datetime.now(timezone.utc)
+            ).count()
+        assert count == 0
 
     def test_different_token_still_valid_after_logout(self, client, db_session):
         """Logging out one token does not invalidate other tokens."""
