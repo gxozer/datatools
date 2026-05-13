@@ -4,10 +4,10 @@ metadata:
   name: github-actions-deploy
 rules:
   - apiGroups: ["apps"]
-    resources: ["deployments"]
+    resources: ["deployments", "replicasets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
-    resources: ["configmaps", "services", "secrets"]
+    resources: ["configmaps", "services", "secrets", "pods"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
@@ -27,6 +27,28 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: github-actions-deploy
+subjects:
+  - kind: User
+    name: github-actions
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: github-actions-cluster-deploy
+rules:
+  - apiGroups: ["external-secrets.io"]
+    resources: ["clustersecretstores"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: github-actions-cluster-deploy
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: github-actions-cluster-deploy
 subjects:
   - kind: User
     name: github-actions
