@@ -973,9 +973,13 @@ Stop RDS (~$14/month):
 aws rds stop-db-instance --db-instance-identifier hello-login --region us-west-2
 ```
 
-Delete EKS cluster (~$88/month):
+Delete EKS cluster (~$88/month) — delete Ingress resources first so the ALB Controller removes any provisioned ALBs before the VPC is torn down:
 
 ```
+aws eks update-kubeconfig --name hello-login --region us-west-2
+kubectl delete ingress --all -n hello-login-staging --ignore-not-found
+kubectl delete ingress --all -n hello-login-production --ignore-not-found
+sleep 30
 eksctl delete cluster --name hello-login --region us-west-2
 ```
 
