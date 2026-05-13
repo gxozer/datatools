@@ -945,7 +945,7 @@ The workflow supports manual triggers. To deploy without pushing to master:
 2. Click **Run workflow**
 3. Select branch and click **Run workflow**
 
-This runs all jobs including the deploy job, useful for testing the pipeline before merging.
+This runs all test jobs (unit, integration, container, E2E) but NOT the deploy job — the deploy step only runs on a push to `master`. Use this to verify tests pass before merging.
 
 ---
 
