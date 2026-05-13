@@ -1,12 +1,14 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: hello-login
+  name: hello-login-backend
   annotations:
     kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/group.name: hello-login
+    alb.ingress.kubernetes.io/group.order: "1"
     alb.ingress.kubernetes.io/healthcheck-path: /api/health
 spec:
   rules:
@@ -19,6 +21,23 @@ spec:
                 name: backend
                 port:
                   number: 5001
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-login-frontend
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/group.name: hello-login
+    alb.ingress.kubernetes.io/group.order: "2"
+    alb.ingress.kubernetes.io/healthcheck-path: /
+spec:
+  rules:
+    - http:
+        paths:
           - path: /
             pathType: Prefix
             backend:

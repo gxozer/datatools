@@ -39,6 +39,7 @@ spec:
       containers:
         - name: backend
           image: backend
+          command: ["python", "run.py"]
           ports:
             - containerPort: 5001
           envFrom:
