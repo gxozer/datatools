@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello-login-config
+data:
+  FRONTEND_URL: "http://hello-login.example.com"
+  CORS_ORIGINS: "http://hello-login.example.com"

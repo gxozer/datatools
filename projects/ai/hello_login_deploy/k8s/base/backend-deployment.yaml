@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: backend
+      initContainers:
+        - name: migrate
+          image: backend
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: hello-login-config
+            - secretRef:
+                name: hello-login-secrets
+      containers:
+        - name: backend
+          image: backend
+          ports:
+            - containerPort: 5001
+          envFrom:
+            - configMapRef:
+                name: hello-login-config
+            - secretRef:
+                name: hello-login-secrets
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5001
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

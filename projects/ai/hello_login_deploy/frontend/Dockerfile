@@ -14,7 +14,7 @@ RUN npm test
 RUN npx vite build
 
 # Stage 2: serve with nginx
-FROM nginx:alpine
+FROM nginxinc/nginx-unprivileged:alpine
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 
@@ -23,4 +23,4 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 ENV BACKEND_HOST=backend
 
-EXPOSE 80
+EXPOSE 8080

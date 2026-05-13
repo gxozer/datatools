@@ -1,0 +1,47 @@
+name: hello-login Teardown
+
+on:
+  workflow_dispatch:
+    inputs:
+      stop_rds:
+        description: "Stop RDS instance (~$14/month saved, restartable)"
+        type: boolean
+        default: true
+      delete_cluster:
+        description: "Delete EKS cluster (~$88/month saved, irreversible)"
+        type: boolean
+        default: false
+
+defaults:
+  run:
+    working-directory: projects/ai/hello_login_deploy
+
+jobs:
+  teardown:
+    name: Teardown infrastructure
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Stop RDS instance
+        if: inputs.stop_rds
+        run: aws rds stop-db-instance --db-instance-identifier hello-login --region us-west-2
+
+      - name: Install eksctl
+        if: inputs.delete_cluster
+        run: |
+          curl -fsSL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin/eksctl
+
+      - name: Delete EKS cluster
+        if: inputs.delete_cluster
+        run: eksctl delete cluster --name hello-login --region us-west-2

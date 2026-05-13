@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hello-login-production
+
+resources:
+  - ../../base
+  - external-secret.yaml
+
+images:
+  - name: backend
+    newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend
+    newTag: latest
+  - name: frontend
+    newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend
+    newTag: latest
+
+patches:
+  - path: configmap-patch.yaml
