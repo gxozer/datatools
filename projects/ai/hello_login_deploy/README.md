@@ -381,6 +381,608 @@ EXIT;
 
 ---
 
+## Deploying to Amazon EKS
+
+Full technical details are in [docs/PRD_eks_deployment.md](docs/PRD_eks_deployment.md) and [docs/TDS_eks_deployment.md](docs/TDS_eks_deployment.md). This section is the operational runbook.
+
+### Prerequisites
+
+- AWS CLI configured with an `admin` profile
+- `eksctl` — `brew install eksctl`
+- `kubectl` — `brew install kubectl`
+- `helm` — `brew install helm`
+
+```bash
+export AWS_PROFILE=admin
+export AWS_DEFAULT_REGION=us-west-2
+```
+
+Setting `AWS_DEFAULT_REGION` means you don't need `--region us-west-2` on every command.
+
+---
+
+### Phase 1 — AWS Infrastructure
+
+#### 1.1 Provision EKS cluster and ECR repositories (PR-61)
+
+**Step 1 — Set AWS profile and region**
+
+All commands in this section require admin credentials. Set them for the session:
+
+```
+export AWS_PROFILE=admin
+export AWS_DEFAULT_REGION=us-west-2
+```
+
+Verify you're using the right account:
+
+```
+aws sts get-caller-identity
+```
+
+Expected: account `277070500859`, not `dev1`.
+
+---
+
+**Step 2 — Create the EKS cluster**
+
+Creates the Kubernetes control plane (managed by AWS) and a node group of 2 `t3.small` EC2 worker nodes with autoscaling up to 6. Takes ~15 minutes.
+
+```
+eksctl create cluster --name hello-login --region us-west-2 --nodegroup-name standard --node-type t3.small --nodes 2 --nodes-min 2 --nodes-max 6 --managed
+```
+
+If the cluster already exists (e.g. after a session break), reconnect instead:
+
+```
+aws eks update-kubeconfig --name hello-login --region us-west-2
+```
+
+Verify the cluster is reachable:
+
+```
+kubectl get nodes
+```
+
+Expected: 2 nodes in `Ready` state.
+
+---
+
+**Step 3 — Create ECR repositories**
+
+ECR (Elastic Container Registry) is the private Docker registry where CI/CD pushes built images. Check if repos already exist:
+
+```
+aws ecr describe-repositories --region us-west-2 --query 'repositories[].repositoryName'
+```
+
+If `hello-login-backend` or `hello-login-frontend` are missing, create them:
+
+```
+aws ecr create-repository --repository-name hello-login-backend --region us-west-2
+```
+
+```
+aws ecr create-repository --repository-name hello-login-frontend --region us-west-2
+```
+
+---
+
+**Step 4 — Test image push (optional but recommended)**
+
+Confirms Docker can authenticate and push to ECR before the CI/CD pipeline runs:
+
+```
+AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+```
+
+```
+aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $AWS_ACCOUNT.dkr.ecr.us-west-2.amazonaws.com
+```
+
+```
+docker build -t $AWS_ACCOUNT.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:test backend/
+```
+
+```
+docker push $AWS_ACCOUNT.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:test
+```
+
+Expected: `Pushed` confirmation with no errors.
+
+---
+
+#### 1.2 Namespaces and AWS Load Balancer Controller (PR-62)
+
+**Step 1 — Enable OIDC for IRSA**
+
+EKS (Elastic Kubernetes Service) uses an OIDC (OpenID Connect) identity provider to let Kubernetes service accounts assume IAM (Identity and Access Management) roles without storing AWS credentials inside the cluster. This is required for the ALB (Application Load Balancer) controller and ESO (External Secrets Operator) to make authenticated calls to AWS APIs. Run once per cluster:
+
+```
+eksctl utils associate-iam-oidc-provider --region us-west-2 --cluster hello-login --approve
+```
+
+Verify:
+
+```
+aws iam list-open-id-connect-providers
+```
+
+Expected: one provider listed with the cluster's OIDC URL.
+
+---
+
+**Step 2 — Create namespaces**
+
+Namespaces logically separate staging and production resources within the same cluster:
+
+```
+kubectl create namespace hello-login-staging
+```
+
+```
+kubectl create namespace hello-login-production
+```
+
+Verify:
+
+```
+kubectl get namespaces | grep hello-login
+```
+
+Expected: both namespaces in `Active` state.
+
+---
+
+**Step 3 — Create IAM policy for the ALB controller**
+
+Downloads the official AWS policy that grants the controller permission to create and manage ALBs:
+
+```
+curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json
+```
+
+Check if the policy already exists first:
+
+```
+aws iam list-policies --query 'Policies[?PolicyName==`AWSLoadBalancerControllerIAMPolicy`].PolicyName' --output text
+```
+
+If the output is empty, create it:
+
+```
+aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam_policy.json
+```
+
+If it already exists, skip this step.
+
+---
+
+**Step 4 — Create IRSA for the ALB controller**
+
+Links a Kubernetes service account to an IAM role so the controller pod can call AWS APIs without storing credentials:
+
+```
+AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+```
+
+```
+eksctl create iamserviceaccount --cluster hello-login --namespace kube-system --name aws-load-balancer-controller --attach-policy-arn arn:aws:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy --approve --region us-west-2
+```
+
+---
+
+**Step 5 — Install the ALB controller via Helm**
+
+Deploys the controller pod into `kube-system`. It watches for Ingress resources and automatically provisions AWS ALBs:
+
+```
+helm repo add eks https://aws.github.io/eks-charts && helm repo update
+```
+
+```
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system --set clusterName=hello-login --set serviceAccount.create=false --set serviceAccount.name=aws-load-balancer-controller
+```
+
+Verify:
+
+```
+kubectl get deployment -n kube-system aws-load-balancer-controller
+```
+
+Expected: `2/2 READY`.
+
+---
+
+#### 1.3 Provision RDS MySQL (PR-69)
+
+**Step 1 — Enable DNS on the VPC**
+
+RDS requires DNS resolution and DNS hostnames to be enabled on the VPC. Without this, the subnet group creation fails.
+
+First get the VPC ID from the EKS cluster:
+
+```
+VPC_ID=$(aws eks describe-cluster --name hello-login --region us-west-2 --query 'cluster.resourcesVpcConfig.vpcId' --output text)
+```
+
+```
+echo "VPC: $VPC_ID"
+```
+
+Then enable DNS:
+
+```
+aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-support --region us-west-2
+```
+
+```
+aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-hostnames --region us-west-2
+```
+
+---
+
+**Step 2 — Create a DB subnet group**
+
+Tells RDS which subnets it can use. Must span at least 2 availability zones. Uses the 3 private subnets created by eksctl:
+
+Create the DB subnet group via the **AWS Console** — the CLI command fails due to an account-level subnet validation issue that the Console bypasses:
+
+1. Go to **RDS → Subnet groups → Create DB subnet group**
+2. Name: `hello-login-db-subnet`
+3. VPC: select the VPC matching `$VPC_ID`
+4. Add subnets from at least 2 AZs (us-west-2a and us-west-2b)
+5. Click **Create**
+
+---
+
+**Step 3 — Create a security group for RDS**
+
+Controls which resources can connect to the database. Only EKS nodes are allowed on port 3306:
+
+```
+RDS_SG=$(aws ec2 create-security-group --group-name hello-login-rds-sg --description "Allow MySQL from EKS nodes" --vpc-id $VPC_ID --region us-west-2 --query 'GroupId' --output text)
+```
+
+```
+NODE_SG=$(aws eks describe-cluster --name hello-login --region us-west-2 --query 'cluster.resourcesVpcConfig.clusterSecurityGroupId' --output text)
+```
+
+```
+aws ec2 authorize-security-group-ingress --group-id $RDS_SG --protocol tcp --port 3306 --source-group $NODE_SG --region us-west-2
+```
+
+---
+
+**Step 4 — Create the RDS instance**
+
+Provisions a `db.t3.micro` MySQL 8.0 instance. Not publicly accessible — only reachable from within the VPC:
+
+```
+aws rds create-db-instance --db-instance-identifier hello-login --db-instance-class db.t3.micro --engine mysql --engine-version 8.0 --master-username hello --master-user-password helloRDS1 --db-name hello_login --db-subnet-group-name hello-login-db-subnet --vpc-security-group-ids $RDS_SG --no-publicly-accessible --allocated-storage 20 --region us-west-2
+```
+
+Wait for it to become available (~5 minutes):
+
+```
+aws rds wait db-instance-available --db-instance-identifier hello-login --region us-west-2
+```
+
+---
+
+**Step 5 — Get the RDS endpoint**
+
+Save this value — it is needed for the DATABASE_URL secret in the next step:
+
+```
+aws rds describe-db-instances --db-instance-identifier hello-login --region us-west-2 --query 'DBInstances[0].Endpoint.Address' --output text
+```
+
+The DATABASE_URL will be: `mysql+pymysql://hello:helloRDS1@<endpoint>:3306/hello_login`
+
+---
+
+#### 1.4 Secrets Manager and External Secrets Operator (PR-63)
+
+**Step 1 — Create secrets in AWS Secrets Manager**
+
+Secrets Manager stores sensitive credentials outside the cluster. Do NOT pass JSON inline — use a file to avoid shell quoting issues.
+
+Generate a JWT secret:
+
+```
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Write staging credentials to a file (fill in actual values):
+
+```bash
+cat > /tmp/staging-secret.json << 'EOF'
+{
+  "DATABASE_URL": "mysql+pymysql://hello:helloRDS1@<rds-endpoint>:3306/hello_login",
+  "JWT_SECRET": "<output-from-above>",
+  "MAIL_PASSWORD": "<brevo-smtp-key>",
+  "MAIL_USERNAME": "<brevo-login-email>",
+  "MAIL_DEFAULT_SENDER": "<sender-email>"
+}
+EOF
+```
+
+```
+aws secretsmanager create-secret --name hello-login/staging --region us-west-2 --secret-string file:///tmp/staging-secret.json
+```
+
+Repeat for production (use a different `JWT_SECRET`):
+
+```bash
+cat > /tmp/production-secret.json << 'EOF'
+{
+  "DATABASE_URL": "mysql+pymysql://hello:helloRDS1@<rds-endpoint>:3306/hello_login",
+  "JWT_SECRET": "<different-strong-secret>",
+  "MAIL_PASSWORD": "<brevo-smtp-key>",
+  "MAIL_USERNAME": "<brevo-login-email>",
+  "MAIL_DEFAULT_SENDER": "<sender-email>"
+}
+EOF
+```
+
+```
+aws secretsmanager create-secret --name hello-login/production --region us-west-2 --secret-string file:///tmp/production-secret.json
+```
+
+To update a secret later:
+
+```
+aws secretsmanager put-secret-value --secret-id hello-login/staging --region us-west-2 --secret-string file:///tmp/staging-secret.json
+```
+
+Verify:
+
+```
+aws secretsmanager list-secrets --region us-west-2 --query 'SecretList[].Name'
+```
+
+Expected: both `hello-login/staging` and `hello-login/production` listed.
+
+---
+
+**Step 2 — Install External Secrets Operator (ESO)**
+
+ESO watches for `ExternalSecret` resources in the cluster and automatically syncs values from Secrets Manager into Kubernetes Secrets. Pods then use those Kubernetes Secrets as environment variables:
+
+```
+helm repo add external-secrets https://charts.external-secrets.io && helm repo update
+```
+
+```
+helm install external-secrets external-secrets/external-secrets -n external-secrets --create-namespace
+```
+
+Verify:
+
+```
+kubectl get pods -n external-secrets
+```
+
+Expected: ESO pods in `Running` state.
+
+---
+
+**Step 3 — Create IRSA for ESO**
+
+ESO needs an IAM role to call Secrets Manager. Create the policy and link it to the ESO service account:
+
+```bash
+cat > /tmp/eso-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+      ],
+      "Resource": "arn:aws:secretsmanager:us-west-2:*:secret:hello-login/*"
+    }
+  ]
+}
+EOF
+```
+
+```
+aws iam create-policy --policy-name ESOSecretsManagerPolicy --policy-document file:///tmp/eso-policy.json
+```
+
+If `ESOSecretsManagerPolicy` already exists, skip the create. Then:
+
+```
+AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+```
+
+```
+eksctl create iamserviceaccount --cluster hello-login --namespace external-secrets --name external-secrets --attach-policy-arn arn:aws:iam::${AWS_ACCOUNT}:policy/ESOSecretsManagerPolicy --approve --region us-west-2
+```
+
+Verify:
+
+```
+kubectl get serviceaccount external-secrets -n external-secrets -o yaml | grep eks.amazonaws.com
+```
+
+Expected: an annotation with the IAM role ARN.
+
+If the annotation is missing (because Helm created the service account before eksctl), rerun with:
+
+```
+eksctl create iamserviceaccount --cluster hello-login --namespace external-secrets --name external-secrets --attach-policy-arn arn:aws:iam::${AWS_ACCOUNT}:policy/ESOSecretsManagerPolicy --approve --region us-west-2 --override-existing-serviceaccounts
+```
+
+---
+
+**Step 4 — Create a ClusterSecretStore**
+
+The ClusterSecretStore tells ESO where to read secrets from (AWS Secrets Manager in us-west-2).
+
+Note: the API version is `external-secrets.io/v1` (not `v1beta1`). Use Python to write the file — heredocs break when pasted due to indentation:
+
+```
+printf 'apiVersion: external-secrets.io/v1\nkind: ClusterSecretStore\nmetadata:\n  name: aws-secrets-manager\nspec:\n  provider:\n    aws:\n      service: SecretsManager\n      region: us-west-2\n      auth:\n        jwt:\n          serviceAccountRef:\n            name: external-secrets\n            namespace: external-secrets\n' > k8s/base/cluster-secret-store.yaml
+```
+
+```
+kubectl apply -f k8s/base/cluster-secret-store.yaml
+```
+
+Verify:
+
+```
+kubectl get clustersecretstore
+```
+
+Expected: `aws-secrets-manager` with `READY = True`.
+
+---
+
+**Step 5 — Create ExternalSecret manifests**
+
+ExternalSecret resources tell ESO which keys to pull from Secrets Manager and map into Kubernetes Secrets. Create one per namespace.
+
+ExternalSecret manifests belong in the repo at `k8s/base/`. Create the staging manifest (API version is `v1`, not `v1beta1`):
+
+```
+printf 'apiVersion: external-secrets.io/v1\nkind: ExternalSecret\nmetadata:\n  name: hello-login-secrets\nspec:\n  refreshInterval: 1h\n  secretStoreRef:\n    name: aws-secrets-manager\n    kind: ClusterSecretStore\n  target:\n    name: hello-login-secrets\n  data:\n    - secretKey: DATABASE_URL\n      remoteRef:\n        key: hello-login/staging\n        property: DATABASE_URL\n    - secretKey: JWT_SECRET\n      remoteRef:\n        key: hello-login/staging\n        property: JWT_SECRET\n    - secretKey: MAIL_PASSWORD\n      remoteRef:\n        key: hello-login/staging\n        property: MAIL_PASSWORD\n    - secretKey: MAIL_USERNAME\n      remoteRef:\n        key: hello-login/staging\n        property: MAIL_USERNAME\n    - secretKey: MAIL_DEFAULT_SENDER\n      remoteRef:\n        key: hello-login/staging\n        property: MAIL_DEFAULT_SENDER\n' > k8s/base/external-secret-staging.yaml
+```
+
+Apply to staging:
+
+```
+kubectl apply -f k8s/base/external-secret-staging.yaml -n hello-login-staging
+```
+
+Create and apply the production manifest (same file, `hello-login/production` key):
+
+```
+printf 'apiVersion: external-secrets.io/v1\nkind: ExternalSecret\nmetadata:\n  name: hello-login-secrets\nspec:\n  refreshInterval: 1h\n  secretStoreRef:\n    name: aws-secrets-manager\n    kind: ClusterSecretStore\n  target:\n    name: hello-login-secrets\n  data:\n    - secretKey: DATABASE_URL\n      remoteRef:\n        key: hello-login/production\n        property: DATABASE_URL\n    - secretKey: JWT_SECRET\n      remoteRef:\n        key: hello-login/production\n        property: JWT_SECRET\n    - secretKey: MAIL_PASSWORD\n      remoteRef:\n        key: hello-login/production\n        property: MAIL_PASSWORD\n    - secretKey: MAIL_USERNAME\n      remoteRef:\n        key: hello-login/production\n        property: MAIL_USERNAME\n    - secretKey: MAIL_DEFAULT_SENDER\n      remoteRef:\n        key: hello-login/production\n        property: MAIL_DEFAULT_SENDER\n' > k8s/base/external-secret-production.yaml
+```
+
+```
+kubectl apply -f k8s/base/external-secret-production.yaml -n hello-login-production
+```
+
+Verify:
+
+```
+kubectl get secret hello-login-secrets -n hello-login-staging
+```
+
+```
+kubectl get secret hello-login-secrets -n hello-login-production
+```
+
+Expected: both secrets exist with the correct keys.
+
+---
+
+### Phase 2 — Kubernetes Manifests (PR-64, PR-65)
+
+Apply base manifests and environment overlays:
+
+```bash
+kubectl apply -k k8s/overlays/staging
+kubectl rollout status deployment/backend -n hello-login-staging
+kubectl rollout status deployment/frontend -n hello-login-staging
+```
+
+---
+
+### Phase 3 — CI/CD (PR-66)
+
+#### Prerequisites
+
+Before the deploy job can run, complete the following setup once:
+
+**1. Create the GitHub Actions IAM role** — see PR-66 Step 1 for full commands. In summary:
+- Register the GitHub Actions OIDC provider in your AWS account
+- Create `GitHubActionsDeployRole` with trust policy scoped to `repo:gxozer/datatools:ref:refs/heads/master`
+- Attach `AmazonEC2ContainerRegistryPowerUser` and `EKSDeployPolicy`
+
+**2. Add GitHub secrets** at `github.com/gxozer/datatools/settings/secrets/actions`:
+- `AWS_DEPLOY_ROLE_ARN` — ARN of the role created above
+- `ECR_BACKEND` — `277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend`
+- `ECR_FRONTEND` — `277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend`
+
+**3. Grant the role EKS access** — add to the `aws-auth` ConfigMap:
+
+```
+kubectl edit configmap aws-auth -n kube-system
+```
+
+Add under `mapRoles`:
+
+```yaml
+- rolearn: arn:aws:iam::277070500859:role/GitHubActionsDeployRole
+  username: github-actions
+  groups:
+    - system:masters
+```
+
+---
+
+#### Automatic deploy (on merge to master)
+
+On merge to `master`, GitHub Actions automatically:
+1. Runs all tests (unit, integration, container, E2E)
+2. Builds and pushes images to ECR tagged with the Git SHA
+3. Applies the staging overlay with the new image tags
+4. Waits for rollout to complete
+
+#### Manual deploy (for testing)
+
+The workflow supports manual triggers. To deploy without pushing to master:
+
+1. Go to **GitHub → Actions → hello-login CI**
+2. Click **Run workflow**
+3. Select branch and click **Run workflow**
+
+This runs all jobs including the deploy job, useful for testing the pipeline before merging.
+
+---
+
+### Teardown (cost saving)
+
+The easiest way to tear down is via the GitHub Actions workflow:
+
+1. Go to **Actions → hello-login Teardown → Run workflow**
+2. Check the boxes for what you want to stop:
+   - **Stop RDS** (default: on) — saves ~$14/month, reversible (RDS can be restarted)
+   - **Delete EKS cluster** (default: off) — saves ~$88/month, irreversible (must re-provision from Phase 1)
+3. Click **Run workflow**
+
+ECR images are always retained. To restart RDS after stopping it:
+
+```
+aws rds start-db-instance --db-instance-identifier hello-login --region us-west-2
+```
+
+**Manual teardown (if pipeline is unavailable):**
+
+Stop RDS (~$14/month):
+
+```
+aws rds stop-db-instance --db-instance-identifier hello-login --region us-west-2
+```
+
+Delete EKS cluster (~$88/month):
+
+```
+eksctl delete cluster --name hello-login --region us-west-2
+```
+
+To restore after cluster deletion, re-run from Phase 1.
+
+---
+
 ## Project Structure
 
 ```

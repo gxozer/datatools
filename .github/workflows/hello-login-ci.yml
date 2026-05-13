@@ -9,6 +9,7 @@ on:
     paths:
       - "projects/ai/hello_login_deploy/**"
       - ".github/workflows/hello-login-ci.yml"
+  workflow_dispatch:
 
 defaults:
   run:
@@ -111,3 +112,59 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: docker compose logs
+
+  deploy:
+    name: Deploy to EKS staging
+    runs-on: ubuntu-latest
+    needs: [backend-tests, backend-container, frontend-container, e2e-tests]
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push backend
+        run: |
+          docker build --platform linux/amd64 \
+            -t ${{ secrets.ECR_BACKEND }}:${{ github.sha }} \
+            -t ${{ secrets.ECR_BACKEND }}:latest \
+            ./backend
+          docker push ${{ secrets.ECR_BACKEND }}:${{ github.sha }}
+          docker push ${{ secrets.ECR_BACKEND }}:latest
+
+      - name: Build and push frontend
+        run: |
+          docker build --platform linux/amd64 \
+            -t ${{ secrets.ECR_FRONTEND }}:${{ github.sha }} \
+            -t ${{ secrets.ECR_FRONTEND }}:latest \
+            ./frontend
+          docker push ${{ secrets.ECR_FRONTEND }}:${{ github.sha }}
+          docker push ${{ secrets.ECR_FRONTEND }}:latest
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name hello-login --region us-west-2
+
+      - name: Update image tags in overlay
+        run: |
+          cd k8s/overlays/staging
+          kustomize edit set image \
+            backend=${{ secrets.ECR_BACKEND }}:${{ github.sha }} \
+            frontend=${{ secrets.ECR_FRONTEND }}:${{ github.sha }}
+
+      - name: Deploy to staging
+        run: kubectl apply -k k8s/overlays/staging
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/backend -n hello-login-staging --timeout=5m
+          kubectl rollout status deployment/frontend -n hello-login-staging --timeout=5m

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello-login-config
+data:
+  FLASK_DEBUG: "false"
+  PORT: "5001"
+  FRONTEND_URL: "https://placeholder.example.com"
+  CORS_ORIGINS: "https://placeholder.example.com"
+  MAIL_SERVER: "smtp-relay.brevo.com"
+  MAIL_PORT: "587"
+  MAIL_USE_TLS: "true"
+  MAIL_SUPPRESS_SEND: "0"
+  MAX_LOGIN_ATTEMPTS: "5"
+  LOCKOUT_WINDOW_MINUTES: "15"
