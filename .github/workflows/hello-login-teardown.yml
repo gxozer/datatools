@@ -42,6 +42,17 @@ jobs:
           curl -fsSL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin/eksctl
 
+      - name: Update kubeconfig
+        if: inputs.delete_cluster
+        run: aws eks update-kubeconfig --name hello-login --region us-west-2
+
+      - name: Delete Ingress resources to trigger ALB deletion
+        if: inputs.delete_cluster
+        run: |
+          kubectl delete ingress --all -n hello-login-staging --ignore-not-found
+          kubectl delete ingress --all -n hello-login-production --ignore-not-found
+          sleep 30
+
       - name: Delete EKS cluster
         if: inputs.delete_cluster
         run: eksctl delete cluster --name hello-login --region us-west-2

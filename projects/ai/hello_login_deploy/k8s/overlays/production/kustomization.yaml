@@ -10,10 +10,10 @@ resources:
 images:
   - name: backend
     newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend
-    newTag: latest
+    newTag: REPLACE_WITH_SHA
   - name: frontend
     newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend
-    newTag: latest
+    newTag: REPLACE_WITH_SHA
 
 patches:
   - path: configmap-patch.yaml

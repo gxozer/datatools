@@ -18,11 +18,11 @@ fileExistenceTests:
     shouldExist: false
 
   - name: "nginx config is present"
-    path: "/etc/nginx/conf.d/default.conf"
+    path: "/etc/nginx/templates/default.conf.template"
     shouldExist: true
 
 metadataTest:
-  exposedPorts: ["80"]
+  exposedPorts: ["8080"]
 
 commandTests:
   - name: "nginx is available"

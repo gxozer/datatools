@@ -9,3 +9,4 @@ resources:
   - ingress.yaml
   - hpa.yaml
   - cluster-secret-store.yaml
+  - github-actions-rbac.yaml

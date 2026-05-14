@@ -945,7 +945,7 @@ The workflow supports manual triggers. To deploy without pushing to master:
 2. Click **Run workflow**
 3. Select branch and click **Run workflow**
 
-This runs all jobs including the deploy job, useful for testing the pipeline before merging.
+This runs all test jobs (unit, integration, container, E2E) but NOT the deploy job — the deploy step only runs on a push to `master`. Use this to verify tests pass before merging.
 
 ---
 
@@ -973,13 +973,94 @@ Stop RDS (~$14/month):
 aws rds stop-db-instance --db-instance-identifier hello-login --region us-west-2
 ```
 
-Delete EKS cluster (~$88/month):
+Delete EKS cluster (~$88/month) — delete Ingress resources first so the ALB Controller removes any provisioned ALBs before the VPC is torn down:
 
 ```
+aws eks update-kubeconfig --name hello-login --region us-west-2
+kubectl delete ingress --all -n hello-login-staging --ignore-not-found
+kubectl delete ingress --all -n hello-login-production --ignore-not-found
+sleep 30
 eksctl delete cluster --name hello-login --region us-west-2
 ```
 
 To restore after cluster deletion, re-run from Phase 1.
+
+---
+
+### Full AWS cleanup (permanent removal)
+
+Run these steps in order to remove every AWS resource created by this project. This is irreversible.
+
+**Step 1 — Delete Ingress and cluster**
+
+Deletes the EKS control plane, nodes, NAT gateway, VPC, EKS OIDC provider, and the IRSA IAM roles for the ALB controller and ESO (eksctl handles all of these automatically).
+
+```
+aws eks update-kubeconfig --name hello-login --region us-west-2
+kubectl delete ingress --all -n hello-login-staging --ignore-not-found
+kubectl delete ingress --all -n hello-login-production --ignore-not-found
+sleep 30
+eksctl delete cluster --name hello-login --region us-west-2
+```
+
+**Step 2 — Delete RDS instance**
+
+```
+aws rds delete-db-instance --db-instance-identifier hello-login --skip-final-snapshot --region us-west-2
+aws rds wait db-instance-deleted --db-instance-identifier hello-login --region us-west-2
+```
+
+**Step 3 — Delete RDS subnet group and security group**
+
+```
+aws rds delete-db-subnet-group --db-subnet-group-name hello-login-db-subnet --region us-west-2
+aws ec2 delete-security-group --group-name hello-login-rds-sg --region us-west-2
+```
+
+**Step 4 — Delete Secrets Manager secrets**
+
+```
+aws secretsmanager delete-secret --secret-id hello-login/staging --force-delete-without-recovery --region us-west-2
+aws secretsmanager delete-secret --secret-id hello-login/production --force-delete-without-recovery --region us-west-2
+```
+
+**Step 5 — Delete ECR repositories**
+
+```
+aws ecr delete-repository --repository-name hello-login-backend --force --region us-west-2
+aws ecr delete-repository --repository-name hello-login-frontend --force --region us-west-2
+```
+
+**Step 6 — Delete IAM roles and policies**
+
+The IRSA roles for the ALB controller and ESO are deleted automatically by eksctl in Step 1. Only the GitHub Actions deploy role and the managed policies need manual cleanup:
+
+```
+aws iam delete-role-policy --role-name GitHubActionsDeployRole --policy-name EKSDeployAccess
+aws iam delete-role-policy --role-name GitHubActionsDeployRole --policy-name TeardownAccess
+aws iam delete-role-policy --role-name GitHubActionsDeployRole --policy-name EKSDeployAccess
+aws iam detach-role-policy --role-name GitHubActionsDeployRole --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+aws iam detach-role-policy --role-name GitHubActionsDeployRole --policy-arn arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+aws iam delete-role --role-name GitHubActionsDeployRole
+aws iam delete-policy --policy-arn arn:aws:iam::277070500859:policy/AWSLoadBalancerControllerIAMPolicy
+aws iam delete-policy --policy-arn arn:aws:iam::277070500859:policy/ESOSecretsManagerPolicy
+```
+
+**Step 7 — Delete GitHub Actions OIDC provider**
+
+The EKS cluster OIDC provider is deleted automatically by eksctl in Step 1. The GitHub Actions OIDC provider is separate and must be deleted manually:
+
+```
+aws iam delete-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::277070500859:oidc-provider/token.actions.githubusercontent.com
+```
+
+**Step 8 — Remove GitHub repository secrets**
+
+```
+gh secret delete AWS_DEPLOY_ROLE_ARN --repo gxozer/datatools
+gh secret delete ECR_BACKEND --repo gxozer/datatools
+gh secret delete ECR_FRONTEND --repo gxozer/datatools
+```
 
 ---
 

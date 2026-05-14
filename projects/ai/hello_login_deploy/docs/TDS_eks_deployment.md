@@ -113,7 +113,7 @@ Injected into the cluster as a Kubernetes Secret via External Secrets Operator (
 
 ```yaml
 # k8s/external-secret.yaml
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: hello-login-secrets
