@@ -991,7 +991,9 @@ To restore after cluster deletion, re-run from Phase 1.
 
 Run these steps in order to remove every AWS resource created by this project. This is irreversible.
 
-**Step 1 — Delete Ingress and cluster (includes NAT gateway, VPC, nodes)**
+**Step 1 — Delete Ingress and cluster**
+
+Deletes the EKS control plane, nodes, NAT gateway, VPC, EKS OIDC provider, and the IRSA IAM roles for the ALB controller and ESO (eksctl handles all of these automatically).
 
 ```
 aws eks update-kubeconfig --name hello-login --region us-west-2
@@ -1031,9 +1033,12 @@ aws ecr delete-repository --repository-name hello-login-frontend --force --regio
 
 **Step 6 — Delete IAM roles and policies**
 
+The IRSA roles for the ALB controller and ESO are deleted automatically by eksctl in Step 1. Only the GitHub Actions deploy role and the managed policies need manual cleanup:
+
 ```
 aws iam delete-role-policy --role-name GitHubActionsDeployRole --policy-name EKSDeployAccess
 aws iam delete-role-policy --role-name GitHubActionsDeployRole --policy-name TeardownAccess
+aws iam delete-role-policy --role-name GitHubActionsDeployRole --policy-name EKSDeployAccess
 aws iam detach-role-policy --role-name GitHubActionsDeployRole --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
 aws iam detach-role-policy --role-name GitHubActionsDeployRole --policy-arn arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
 aws iam delete-role --role-name GitHubActionsDeployRole
@@ -1041,13 +1046,13 @@ aws iam delete-policy --policy-arn arn:aws:iam::277070500859:policy/AWSLoadBalan
 aws iam delete-policy --policy-arn arn:aws:iam::277070500859:policy/ESOSecretsManagerPolicy
 ```
 
-**Step 7 — Delete OIDC providers**
+**Step 7 — Delete GitHub Actions OIDC provider**
+
+The EKS cluster OIDC provider is deleted automatically by eksctl in Step 1. The GitHub Actions OIDC provider is separate and must be deleted manually:
 
 ```
 aws iam delete-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::277070500859:oidc-provider/token.actions.githubusercontent.com
 ```
-
-The EKS cluster OIDC provider is deleted automatically by `eksctl delete cluster` in Step 1.
 
 **Step 8 — Remove GitHub repository secrets**
 
