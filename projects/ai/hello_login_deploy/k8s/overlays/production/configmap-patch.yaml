@@ -1,7 +1,23 @@
+# configmap-patch.yaml  (production)
+#
+# Overrides FRONTEND_URL and CORS_ORIGINS in the base ConfigMap for production.
+# All other ConfigMap keys (FLASK_DEBUG, PORT, MAIL_SERVER, etc.) are inherited
+# unchanged from base/configmap.yaml.
+#
+# See k8s/overlays/staging/configmap-patch.yaml for full explanation of
+# how strategic merge patching works.
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: hello-login-config
+  name: hello-login-config   # must match base/configmap.yaml exactly
+
 data:
+  # Production frontend URL — must be the real public domain of the production site.
+  # The backend uses this to build links in emails (e.g. password reset, verification).
   FRONTEND_URL: "http://hello-login.example.com"
+
+  # CORS_ORIGINS — the browser is only allowed to make API requests from this origin.
+  # Must match FRONTEND_URL so the production frontend can reach the production API.
+  # Any other origin (e.g. staging URL, localhost) will be blocked by the browser.
   CORS_ORIGINS: "http://hello-login.example.com"

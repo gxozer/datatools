@@ -1,0 +1,100 @@
+name: Terraform CI
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: terraform init
+        run: terraform init -backend=false
+        working-directory: terraform
+
+      - name: terraform validate
+        run: terraform validate
+        working-directory: terraform
+
+  lint:
+    name: tflint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.50.3
+
+      - name: Init tflint
+        run: tflint --init
+        working-directory: terraform
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Run tflint
+        run: tflint --recursive
+        working-directory: terraform
+
+  security:
+    name: checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform
+          framework: terraform
+          soft_fail: false
+          skip_check: >-
+            CKV_AWS_7,
+            CKV_AWS_144,
+            CKV_AWS_338,
+            CKV_AWS_23,
+            CKV_AWS_37,
+            CKV_AWS_38,
+            CKV_AWS_39,
+            CKV_AWS_51,
+            CKV_AWS_58,
+            CKV_AWS_118,
+            CKV_AWS_129,
+            CKV_AWS_130,
+            CKV_AWS_136,
+            CKV_AWS_149,
+            CKV_AWS_157,
+            CKV_AWS_161,
+            CKV_AWS_293,
+            CKV_AWS_382,
+            CKV2_AWS_5,
+            CKV2_AWS_11,
+            CKV2_AWS_12,
+            CKV2_AWS_57,
+            CKV2_AWS_69
+
+  unit-test:
+    name: terraform test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: terraform init
+        run: terraform init -backend=false
+        working-directory: terraform
+
+      - name: terraform test
+        run: terraform test
+        working-directory: terraform

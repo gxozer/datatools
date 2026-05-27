@@ -1,19 +1,46 @@
+# kustomization.yaml  (production overlay)
+#
+# This overlay customises the base manifests for the PRODUCTION environment.
+# It is applied with: kubectl apply -k k8s/overlays/production/
+#
+# What this overlay does on top of the base:
+#   1. Sets the namespace for all resources to "hello-login-production"
+#   2. Replaces placeholder image names with real ECR URLs, tagged with a git SHA
+#   3. Adds the ExternalSecret manifest (production-specific secret paths)
+#   4. Patches the ConfigMap with production-specific URLs
+#
+# Key difference from staging:
+#   Image tags use "REPLACE_WITH_SHA" — a placeholder that the CI/CD pipeline
+#   replaces with the actual git commit SHA before applying (e.g. "sha-abc1234").
+#   This pins production to a specific, tested, immutable image rather than
+#   "latest" which could change unexpectedly.
+
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# namespace — all resources are created in "hello-login-production",
+# isolated from the staging namespace.
 namespace: hello-login-production
 
 resources:
-  - ../../base
-  - external-secret.yaml
+  - ../../base         # all base manifests
+  - external-secret.yaml  # production ExternalSecret (reads from hello-login/production)
 
+# images — replace placeholder image names with full ECR URLs.
 images:
   - name: backend
     newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend
+    # REPLACE_WITH_SHA — this placeholder is replaced by the CI/CD pipeline
+    # with the actual git commit SHA of the code being deployed, e.g. "sha-abc1234".
+    # Using a SHA instead of "latest" means:
+    #   - The exact deployed version is always known and traceable
+    #   - A rollback just means deploying a previous SHA
+    #   - Production is never accidentally updated by a new push to a branch
     newTag: REPLACE_WITH_SHA
+
   - name: frontend
     newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend
     newTag: REPLACE_WITH_SHA
 
 patches:
-  - path: configmap-patch.yaml
+  - path: configmap-patch.yaml   # overrides FRONTEND_URL and CORS_ORIGINS for production

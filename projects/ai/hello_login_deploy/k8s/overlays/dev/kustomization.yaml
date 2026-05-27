@@ -1,0 +1,58 @@
+# kustomization.yaml  (dev overlay)
+#
+# Targets k3s (lightweight Kubernetes) running on the dev EC2 instance.
+# For Docker Compose deployment instead, use docker-compose.ec2.yml.
+#
+# Apply with:
+#   kubectl apply -k k8s/overlays/dev/
+#
+# Prerequisites:
+#   1. k3s on EC2: curl -sfL https://get.k3s.io | sh -
+#      Then copy /etc/rancher/k3s/k3s.yaml to ~/.kube/config (update server IP)
+#   2. Populate secrets file:
+#      cp k8s/overlays/dev/.env.dev.example k8s/overlays/dev/.env.dev
+#      (edit .env.dev — it is gitignored)
+#   3. Push images to ECR with 'latest' tag (or update newTag below)
+#
+# Key differences from staging:
+#   - MySQL runs as a pod in the cluster (no RDS)
+#   - Secrets come from a local .env.dev file, not AWS Secrets Manager
+#   - 1 replica per deployment (single node, no HA needed)
+#   - Traefik ingress (k3s default) instead of ALB
+#   - No HPA, no ClusterSecretStore, no RBAC for GitHub Actions
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hello-login-dev
+
+# List base resources individually to exclude staging-specific manifests
+# (cluster-secret-store, github-actions-rbac, hpa, ingress).
+resources:
+  - ../../base/configmap.yaml
+  - ../../base/backend-deployment.yaml
+  - ../../base/frontend-deployment.yaml
+  - ../../base/services.yaml
+  - mysql.yaml     # MySQL pod + Service (replaces RDS)
+  - ingress.yaml   # Traefik ingress (k3s default) instead of ALB
+
+images:
+  - name: backend
+    newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend
+    newTag: latest
+  - name: frontend
+    newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend
+    newTag: latest
+
+patches:
+  - path: configmap-patch.yaml    # dev FRONTEND_URL and CORS_ORIGINS
+  - path: deployment-patch.yaml   # 1 replica, remove topologySpreadConstraints
+
+# Creates the hello-login-secrets Kubernetes Secret from .env.dev.
+# .env.dev is gitignored — populate it before applying.
+secretGenerator:
+  - name: hello-login-secrets
+    envs:
+      - .env.dev
+    options:
+      disableNameSuffixHash: true

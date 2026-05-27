@@ -1,0 +1,42 @@
+name: Terratest Integration
+
+# Manual trigger only — each run costs ~$5-10 (EKS provisioning) and
+# takes ~30 minutes. Do not run on every push.
+on:
+  workflow_dispatch:
+
+jobs:
+  terratest:
+    name: Terratest Integration
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # required for OIDC authentication with AWS
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+          terraform_wrapper: false   # required: terratest reads stdout directly
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TERRATEST_AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Download Go dependencies
+        run: go mod download
+        working-directory: projects/ai/hello_login_deploy/terraform/test
+
+      - name: Run Terratest
+        run: go test -v -timeout 60m -run TestTerraformIntegration
+        working-directory: projects/ai/hello_login_deploy/terraform/test
+        env:
+          AWS_DEFAULT_REGION: us-west-2

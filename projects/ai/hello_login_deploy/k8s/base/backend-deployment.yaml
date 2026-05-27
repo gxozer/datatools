@@ -1,68 +1,128 @@
-apiVersion: apps/v1
-kind: Deployment
+# backend-deployment.yaml
+#
+# A Deployment is a Kubernetes resource that manages a set of identical pods
+# (running containers). It ensures the desired number of pods are always running,
+# replaces failed pods automatically, and handles rolling updates.
+#
+# Acronyms used in this file:
+#   HPA  — HorizontalPodAutoscaler (defined in hpa.yaml) — scales replicas based on CPU
+#   CPU  — Central Processing Unit — compute resource measured in millicores (m)
+#   Mi   — Mebibytes (1 Mi = 1.048 MB) — memory unit used by Kubernetes
+
+apiVersion: apps/v1   # the Kubernetes API group and version for Deployments
+kind: Deployment      # the type of resource being defined
 metadata:
-  name: backend
+  name: backend       # the name of this Deployment; used by Services and HPA to reference it
+
 spec:
+  # replicas — how many identical pod copies to run simultaneously.
+  # 2 ensures the app stays available if one pod crashes or a node goes down.
+  # The HPA in hpa.yaml can increase this up to 6 based on CPU load.
   replicas: 2
+
+  # selector — tells the Deployment which pods it "owns" and manages.
+  # It finds pods by matching their labels. Must match template.metadata.labels below.
   selector:
     matchLabels:
-      app: backend
+      app: backend    # only manage pods that have the label app=backend
+
+  # strategy — how to roll out new versions of the pod (e.g. after a new image is pushed).
   strategy:
-    type: RollingUpdate
+    type: RollingUpdate   # replace old pods gradually, not all at once (avoids downtime)
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 1         # allow 1 extra pod above the desired count during an update
+                          # e.g. if replicas=2, up to 3 pods can run during the rollout
+      maxUnavailable: 0   # never reduce below the desired count during an update
+                          # guarantees 2 pods are always serving traffic during a deploy
+
+  # template — the blueprint for every pod this Deployment creates.
   template:
     metadata:
       labels:
-        app: backend
+        app: backend    # every pod gets this label; must match selector.matchLabels above
+
     spec:
+      # securityContext — security settings applied to every container in the pod.
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
+        runAsNonRoot: true   # refuse to start if the container image runs as root (UID 0)
+                             # prevents privilege escalation if the container is compromised
+        runAsUser: 1000      # run all processes as Linux user ID 1000 (a non-privileged user)
+
+      # topologySpreadConstraints — spread pods across failure domains (AZs — Availability Zones).
+      # Without this, Kubernetes might place both pods on nodes in the same AZ,
+      # meaning an AZ outage would take down the entire backend.
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: topology.kubernetes.io/zone
-          whenUnsatisfiable: ScheduleAnyway
+        - maxSkew: 1                            # allow at most 1 more pod in one AZ than another
+          topologyKey: topology.kubernetes.io/zone  # spread across AZs (zones)
+          whenUnsatisfiable: ScheduleAnyway     # if spreading is impossible, schedule anyway
+                                                # (don't block the pod from starting)
           labelSelector:
             matchLabels:
-              app: backend
+              app: backend                      # apply this constraint to backend pods only
+
+      # initContainers — containers that run to completion BEFORE the main container starts.
+      # Used here to run database migrations. If migrations fail, the pod does not start,
+      # preventing the app from running against a stale or broken schema.
       initContainers:
         - name: migrate
-          image: backend
+          image: backend          # same image as the main container (overridden by Kustomize)
           command: ["python", "-m", "alembic", "upgrade", "head"]
+          # alembic — the Python database migration tool
+          # upgrade head — apply all pending migrations to bring the schema up to date
           envFrom:
             - configMapRef:
-                name: hello-login-config
+                name: hello-login-config    # inject non-secret config (PORT, FLASK_DEBUG, etc.)
             - secretRef:
-                name: hello-login-secrets
+                name: hello-login-secrets   # inject secrets (DATABASE_URL needed to connect)
+
+      # containers — the main application containers that run for the lifetime of the pod.
       containers:
         - name: backend
-          image: backend
-          command: ["python", "run.py"]
+          image: backend          # placeholder name; Kustomize replaces this with the full ECR URL
+          command: ["python", "run.py"]   # starts the Flask API server
+
           ports:
-            - containerPort: 5001
+            - containerPort: 5001   # the port the Flask app listens on inside the container
+                                    # must match the Service's targetPort in services.yaml
+
+          # envFrom — inject all keys from a ConfigMap or Secret as environment variables.
+          # The app reads these at startup (DATABASE_URL, FLASK_DEBUG, MAIL_SERVER, etc.)
           envFrom:
             - configMapRef:
-                name: hello-login-config
+                name: hello-login-config    # non-secret configuration
             - secretRef:
-                name: hello-login-secrets
+                name: hello-login-secrets   # secrets synced from AWS Secrets Manager by ESO
+
+          # livenessProbe — Kubernetes periodically calls this endpoint.
+          # If it fails repeatedly, Kubernetes RESTARTS the pod (assumes it is stuck/crashed).
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: /api/health   # the Flask health check endpoint
               port: 5001
-            initialDelaySeconds: 10
-            periodSeconds: 15
+            initialDelaySeconds: 10   # wait 10s after startup before first check (app needs time to boot)
+            periodSeconds: 15         # check every 15 seconds
+
+          # readinessProbe — Kubernetes calls this before sending traffic to the pod.
+          # If it fails, the pod is removed from the Service's load balancer
+          # (traffic stops going to it) but the pod is NOT restarted.
+          # Useful during startup: only route traffic once the app is fully ready.
           readinessProbe:
             httpGet:
               path: /api/health
               port: 5001
-            initialDelaySeconds: 5
+            initialDelaySeconds: 5    # start checking sooner than liveness (readiness can fail briefly)
             periodSeconds: 10
+
+          # resources — CPU and memory guarantees and limits for this container.
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              # requests — the minimum resources guaranteed to this container.
+              # Kubernetes uses these to decide which node to schedule the pod on.
+              cpu: 100m       # 100 millicores = 0.1 CPU cores
+              memory: 128Mi   # 128 mebibytes of RAM
             limits:
-              cpu: 500m
-              memory: 256Mi
+              # limits — the maximum resources this container may use.
+              # If it exceeds the memory limit, the container is killed (OOMKilled).
+              # If it exceeds the CPU limit, it is throttled (slowed down, not killed).
+              cpu: 500m       # 500 millicores = 0.5 CPU cores
+              memory: 256Mi   # 256 mebibytes of RAM
