@@ -20,6 +20,7 @@ output "db_name" {
 # ARN of the Secrets Manager secret that RDS automatically creates for the master
 # password (rds!db-<instance-id>-admin). Use this to grant application roles
 # read access to the DB credential.
+# try() returns null when master_user_secret is empty (e.g. in terraform test with mock providers).
 output "master_user_secret_arn" {
-  value = aws_db_instance.this.master_user_secret[0].secret_arn
+  value = try(aws_db_instance.this.master_user_secret[0].secret_arn, null)
 }

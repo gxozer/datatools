@@ -68,15 +68,17 @@ run "private_subnets_have_internal_elb_tag" {
   }
 }
 
-run "rds_sg_allows_mysql_from_eks_nodes" {
+run "rds_sg_exists" {
   module {
     source = "./modules/networking"
   }
 
-  # ingress is a set, not a list — index access ([0]) doesn't work on sets.
-  # Use contains() to check that at least one ingress rule allows port 3306.
+  # The RDS SG has no inline ingress rules — the port 3306 rule is added in the
+  # root main.tf as aws_security_group_rule.rds_from_eks_cluster (separate from
+  # this module) to avoid mixing inline ingress blocks with aws_security_group_rule
+  # on the same SG, which causes AWS provider conflicts. Verify the SG is created.
   assert {
-    condition     = contains([for r in aws_security_group.rds.ingress : r.from_port], 3306)
-    error_message = "RDS SG should have an ingress rule on port 3306"
+    condition     = aws_security_group.rds.name == "hello-login-staging-rds"
+    error_message = "RDS security group should be created with the correct name"
   }
 }
