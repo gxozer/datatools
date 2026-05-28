@@ -48,3 +48,4 @@ images:
 # configmap-patch.yaml overrides FRONTEND_URL and CORS_ORIGINS with staging-specific values.
 patches:
   - path: configmap-patch.yaml
+  - path: ingress-patch.yaml   # sets the staging ACM certificate ARN on both Ingress objects

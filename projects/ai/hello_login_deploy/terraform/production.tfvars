@@ -43,3 +43,12 @@ rds_prevent_destroy = true
 # GitHub org/user — scopes the GitHub Actions IAM role to this repository only.
 github_org  = "gxozer"
 github_repo = "hello_login_deploy"
+
+# false — ECR repos are account-global. They are created and owned by the
+# staging state. Production looks them up via data sources.
+ecr_create_repos = false
+
+# false — the GitHub Actions OIDC provider is account-global and was already
+# created by the staging state. Creating it again here would fail with
+# "EntityAlreadyExists". Production references it by ARN without owning it.
+create_github_oidc_provider = false

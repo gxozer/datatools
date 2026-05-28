@@ -47,10 +47,10 @@ metadata:
     # The ssl-redirect annotation below redirects all HTTP traffic to HTTPS.
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
 
-    # The ACM (AWS Certificate Manager) certificate ARN for staging.gokhanozer.com.
-    # This is what enables the padlock in the browser — the certificate proves the
-    # server is the genuine staging.gokhanozer.com and encrypts all traffic.
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:277070500859:certificate/2a27090f-a837-48b2-bada-802b09bf6995
+    # ACM certificate ARN — set per-environment in the Kustomize overlay
+    # (k8s/overlays/<env>/ingress-patch.yaml). Not set here to avoid production
+    # inheriting the staging certificate.
+    # alb.ingress.kubernetes.io/certificate-arn: PATCHED_BY_OVERLAY
 
     # Redirect HTTP (port 80) to HTTPS (port 443) automatically.
     # Anyone who visits http://staging.gokhanozer.com will be sent to https://staging.gokhanozer.com.
@@ -95,7 +95,8 @@ metadata:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:277070500859:certificate/2a27090f-a837-48b2-bada-802b09bf6995
+    # ACM certificate ARN — set per-environment in the Kustomize overlay.
+    # alb.ingress.kubernetes.io/certificate-arn: PATCHED_BY_OVERLAY
     alb.ingress.kubernetes.io/ssl-redirect: '443'
     alb.ingress.kubernetes.io/group.name: hello-login   # same group — shares the ALB with backend
 

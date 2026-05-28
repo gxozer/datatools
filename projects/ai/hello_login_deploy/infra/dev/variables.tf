@@ -16,9 +16,8 @@ variable "key_name" {
 }
 
 variable "ssh_cidr_blocks" {
-  description = "CIDR blocks allowed SSH access (port 22) — restrict to your IP for security"
+  description = "CIDR blocks allowed SSH access (port 22). Required — set to your IP: [\"$(curl -4 -s ifconfig.me)/32\"]"
   type        = list(string)
-  default     = ["0.0.0.0/0"]
 }
 
 variable "ecr_account_id" {

@@ -91,7 +91,12 @@ resource "aws_eks_cluster" "this" {
 
     # endpoint_public_access=true: kubectl works from your laptop without a VPN.
     # Set to false for stricter environments that require a VPN for cluster access.
-    endpoint_public_access = true
+    endpoint_public_access  = true
+
+    # Restrict which IPs can reach the public Kubernetes API endpoint.
+    # Default is ["0.0.0.0/0"] (open to internet). Override in tfvars with your
+    # office/VPN CIDR(s) — e.g. ["203.0.113.0/24"] — to reduce attack surface.
+    public_access_cidrs = var.public_access_cidrs
   }
 
   # The cluster role must exist and have its policy attached before the cluster

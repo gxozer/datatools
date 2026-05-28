@@ -49,3 +49,14 @@ variable "github_org" {
 variable "github_repo" {
   type = string
 }
+
+# Controls whether this module creates the GitHub Actions OIDC provider.
+# The provider is account-global — running both staging and production
+# states with this set to true will fail on the second apply with
+# "provider already exists". Set to true for the first environment applied
+# (staging) and false for all others (production), which reference the
+# already-created provider by ARN.
+variable "create_github_oidc_provider" {
+  type    = bool
+  default = true
+}

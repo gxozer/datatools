@@ -93,3 +93,29 @@ variable "github_repo" {
   type        = string
   default     = "hello_login_deploy"
 }
+
+# ECR repos are account-global. Only one state should create them (staging).
+# Set to false in production so it looks them up instead of trying to recreate them.
+variable "ecr_create_repos" {
+  description = "Create ECR repositories (true for staging, false for production which references staging's repos)"
+  type        = bool
+  default     = true
+}
+
+# CIDR blocks that can reach the public Kubernetes API endpoint.
+# Default is open; restrict to your office/VPN CIDR(s) to reduce attack surface.
+# Example: ["203.0.113.0/24", "198.51.100.5/32"]
+variable "eks_public_access_cidrs" {
+  description = "CIDRs allowed to reach the EKS public API endpoint"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+# The GitHub Actions OIDC provider is account-global — it can only be created
+# once per AWS account. Set to true for staging (creates it) and false for
+# production (provider already exists; staging owns it).
+variable "create_github_oidc_provider" {
+  description = "Create the GitHub Actions OIDC provider (account-global; set false if already exists)"
+  type        = bool
+  default     = true
+}

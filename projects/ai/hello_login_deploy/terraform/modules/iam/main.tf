@@ -244,10 +244,13 @@ resource "aws_iam_role_policy_attachment" "github_actions" {
 #
 # Registers GitHub's OIDC issuer as a trusted identity provider in this AWS account.
 # This is a GLOBAL, PER-ACCOUNT resource — only one should exist per account.
+# Set create_github_oidc_provider = false in production.tfvars so that staging
+# creates it and production looks it up, avoiding an "already exists" conflict.
 #
 # The thumbprint is a fixed value published by GitHub — it is the fingerprint
 # of the root CA certificate for token.actions.githubusercontent.com.
 resource "aws_iam_openid_connect_provider" "github" {
+  count           = var.create_github_oidc_provider ? 1 : 0
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]

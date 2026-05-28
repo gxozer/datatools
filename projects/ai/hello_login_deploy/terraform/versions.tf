@@ -27,14 +27,6 @@ terraform {
       version = "~> 2.30"
     }
 
-    # random — generates random values. Used by the rds module to create
-    # a secure initial database password without storing it in tfvars or
-    # committing it to git.
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
-    }
-
     # tls — reads TLS certificates over HTTPS. Used by the eks module to
     # fetch the OIDC (OpenID Connect — a standard for federated identity) issuer
     # certificate thumbprint from the EKS cluster, which is required when
@@ -75,31 +67,28 @@ provider "aws" {
 }
 
 # Configure the Helm provider to talk to the EKS cluster we create.
-# It needs three things to authenticate:
-#   host                   — the Kubernetes API server URL
-#   cluster_ca_certificate — the cluster's TLS certificate (to verify we're
-#                            talking to the real cluster, not an impostor)
-#   token                  — a short-lived auth token (expires after 15 min;
-#                            Terraform fetches a fresh one on each run)
+# Uses exec auth (aws eks get-token) rather than a data source token so that
+# auth is deferred to apply time — a data source token would be read at plan
+# time before the cluster exists, breaking the first apply from scratch.
 provider "helm" {
   kubernetes {
     host                   = module.eks.cluster_endpoint
     cluster_ca_certificate = base64decode(module.eks.cluster_ca)
-    token                  = data.aws_eks_cluster_auth.this.token
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.aws_region]
+    }
   }
 }
 
 # Configure the Kubernetes provider with the same credentials as Helm above.
-# Both providers need to reach the same cluster API.
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
   cluster_ca_certificate = base64decode(module.eks.cluster_ca)
-  token                  = data.aws_eks_cluster_auth.this.token
-}
-
-# Fetches a temporary authentication token for the EKS cluster from AWS.
-# This is a data source (read-only) — it does not create anything.
-# The token is used by the helm and kubernetes providers above.
-data "aws_eks_cluster_auth" "this" {
-  name = module.eks.cluster_name
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.aws_region]
+  }
 }

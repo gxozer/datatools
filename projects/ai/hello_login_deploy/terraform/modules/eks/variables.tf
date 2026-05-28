@@ -42,3 +42,11 @@ variable "min_nodes" {
 variable "max_nodes" {
   type = number
 }
+
+# CIDR blocks that can reach the public Kubernetes API endpoint.
+# ["0.0.0.0/0"] leaves it open to the internet; restrict to office/VPN
+# CIDRs to reduce attack surface on the control plane.
+variable "public_access_cidrs" {
+  type    = list(string)
+  default = ["0.0.0.0/0"]
+}

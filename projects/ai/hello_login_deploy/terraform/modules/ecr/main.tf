@@ -57,11 +57,14 @@ locals {
 }
 
 # Creates one ECR repository for each name in the repos list.
+# Only the first environment to apply should create ECR repos (staging by default)
+# because repos are account-global and cannot be managed by multiple states.
+# Set create_repos = false in production.tfvars; production will use data sources.
 # for_each iterates over a set (toset converts the list to a set to remove
 # duplicates and give each item a stable key).
 # each.key is the repository name (e.g. "hello-login-backend").
 resource "aws_ecr_repository" "this" {
-  for_each = toset(local.repos)
+  for_each = var.create_repos ? toset(local.repos) : toset([])
 
   name = each.key
 
@@ -78,11 +81,23 @@ resource "aws_ecr_repository" "this" {
     # Results appear in the ECR console. No extra cost.
     scan_on_push = true
   }
+
+  lifecycle {
+    # Repos are shared across environments — never allow terraform destroy to
+    # delete them accidentally. Remove this protection manually only when
+    # decommissioning the entire project.
+    prevent_destroy = true
+  }
 }
 
-# Attaches the lifecycle policy to each repository.
-# for_each iterates over the repository resources created above, so each
-# repository gets exactly one lifecycle policy.
+# When create_repos = false (production), look up the repos that staging created.
+data "aws_ecr_repository" "existing" {
+  for_each = var.create_repos ? toset([]) : toset(local.repos)
+  name     = each.key
+}
+
+# Attaches the lifecycle policy to each repository we own (create_repos = true).
+# When create_repos = false (production), staging owns the lifecycle policy.
 resource "aws_ecr_lifecycle_policy" "this" {
   for_each = aws_ecr_repository.this
 

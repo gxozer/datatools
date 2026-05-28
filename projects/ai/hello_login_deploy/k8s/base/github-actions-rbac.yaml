@@ -98,9 +98,12 @@ metadata:
 rules:
   # ClusterSecretStore is a cluster-scoped ESO resource (not namespace-scoped),
   # so it must be managed via a ClusterRole, not a namespace Role.
+  # Read-only: the ClusterSecretStore is provisioned by Terraform, not CI/CD.
+  # Granting write access here would let the pipeline modify the secret provider
+  # configuration for all namespaces cluster-wide — too broad.
   - apiGroups: ["external-secrets.io"]
     resources: ["clustersecretstores"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["get", "list", "watch"]
 
   # Read-only access to Services and Ingresses cluster-wide.
   # Used to verify deployment state (e.g. check load balancer status) without

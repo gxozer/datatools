@@ -3,7 +3,7 @@ name: Terraform CI
 on:
   pull_request:
     paths:
-      - "terraform/**"
+      - "projects/ai/hello_login_deploy/terraform/**"
 
 jobs:
   validate:
@@ -18,11 +18,11 @@ jobs:
 
       - name: terraform init
         run: terraform init -backend=false
-        working-directory: terraform
+        working-directory: projects/ai/hello_login_deploy/terraform
 
       - name: terraform validate
         run: terraform validate
-        working-directory: terraform
+        working-directory: projects/ai/hello_login_deploy/terraform
 
   lint:
     name: tflint
@@ -36,13 +36,13 @@ jobs:
 
       - name: Init tflint
         run: tflint --init
-        working-directory: terraform
+        working-directory: projects/ai/hello_login_deploy/terraform
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
       - name: Run tflint
         run: tflint --recursive
-        working-directory: terraform
+        working-directory: projects/ai/hello_login_deploy/terraform
 
   security:
     name: checkov
@@ -53,7 +53,7 @@ jobs:
       - name: Run checkov
         uses: bridgecrewio/checkov-action@v12
         with:
-          directory: terraform
+          directory: projects/ai/hello_login_deploy/terraform
           framework: terraform
           soft_fail: false
           skip_check: >-
@@ -93,8 +93,8 @@ jobs:
 
       - name: terraform init
         run: terraform init -backend=false
-        working-directory: terraform
+        working-directory: projects/ai/hello_login_deploy/terraform
 
       - name: terraform test
         run: terraform test
-        working-directory: terraform
+        working-directory: projects/ai/hello_login_deploy/terraform

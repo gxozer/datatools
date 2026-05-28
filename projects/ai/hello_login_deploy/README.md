@@ -807,6 +807,18 @@ hello_login_deploy/
 │       ├── backend.yaml
 │       ├── frontend.yaml
 │       └── verify_setup.sh
+│
+│   # Two separate Terraform roots — kept apart because they manage completely
+│   # different infrastructure with different lifecycles and no shared state:
+│   #
+│   #   terraform/   — EKS stack (staging + production). Full cloud setup:
+│   #                  VPC, EKS, RDS, ECR, IAM, ALB, Secrets Manager.
+│   #                  Long-lived; uses workspaces for staging vs production.
+│   #
+│   #   infra/dev/   — Dev EC2 stack (single instance + Docker Compose).
+│   #                  Throwaway; destroyed when not in use to save cost.
+│   #                  Mixing them would couple dev teardown to prod infrastructure.
+│
 ├── terraform/
 │   ├── modules/              # networking, eks, rds, ecr, iam, secrets, helm-addons
 │   ├── test/                 # Terratest integration tests (Go)
@@ -821,7 +833,7 @@ hello_login_deploy/
 │   ├── staging.tfvars
 │   └── production.tfvars
 ├── infra/
-│   └── dev/                  # Terraform for dev EC2 (separate from EKS terraform/)
+│   └── dev/                  # Terraform for dev EC2 (single instance, throwaway)
 │       ├── main.tf           # EC2 instance, security group, EIP, IAM role
 │       ├── variables.tf
 │       ├── outputs.tf

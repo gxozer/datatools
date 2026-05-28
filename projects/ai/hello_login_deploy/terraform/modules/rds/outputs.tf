@@ -16,3 +16,10 @@ output "db_port" {
 output "db_name" {
   value = aws_db_instance.this.db_name
 }
+
+# ARN of the Secrets Manager secret that RDS automatically creates for the master
+# password (rds!db-<instance-id>-admin). Use this to grant application roles
+# read access to the DB credential.
+output "master_user_secret_arn" {
+  value = aws_db_instance.this.master_user_secret[0].secret_arn
+}
