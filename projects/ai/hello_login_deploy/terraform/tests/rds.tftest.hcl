@@ -1,5 +1,4 @@
 mock_provider "aws" {}
-mock_provider "random" {}
 
 variables {
   environment        = "staging"
