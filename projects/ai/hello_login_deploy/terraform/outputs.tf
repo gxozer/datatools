@@ -76,3 +76,13 @@ output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions OIDC (OpenID Connect) — assumed by CI/CD workflows without long-lived credentials"
   value       = module.iam.github_actions_role_arn
 }
+
+# ARN of the RDS-managed Secrets Manager secret (rds!db-<instance-id>-admin).
+# The ESO IAM policy grants read access to this ARN so ExternalSecret can
+# compose DATABASE_URL from its fields (username, password, host, port, dbname).
+# Null until the RDS instance is created (first apply). Read with:
+#   terraform output -raw master_user_secret_arn
+output "master_user_secret_arn" {
+  description = "ARN of the RDS-managed master password secret in Secrets Manager"
+  value       = module.rds.master_user_secret_arn
+}

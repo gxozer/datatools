@@ -117,14 +117,28 @@ data "aws_iam_policy_document" "eso_assume" {
 }
 
 # Permissions policy — what can ESO do?
-# GetSecretValue: read the secret value (the actual DATABASE_URL, JWT_SECRET, etc.)
+# GetSecretValue: read the secret value (the actual JWT_SECRET, MAIL_*, DB credentials, etc.)
 # DescribeSecret: read metadata about the secret (required by ESO to check for updates)
-# Resource scoped to "${var.secret_arn}*" — the * covers the version suffix that
-# AWS appends to the ARN (e.g. hello-login/staging-ABCDEF123).
+#
+# Two statements:
+#   1. App secret (hello-login/<env>) — JWT_SECRET, MAIL_* fields
+#      Scoped to "${var.secret_arn}*" — the * covers the version suffix AWS appends.
+#   2. RDS-managed secret (rds!db-<instance-id>-admin) — username, password, host, port, dbname
+#      Only added when rds_master_user_secret_arn is known (non-null).
+#      ESO uses these fields via target.template to compose DATABASE_URL at sync time,
+#      so the composed URL stays current across RDS password rotations.
 data "aws_iam_policy_document" "eso" {
   statement {
     actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
     resources = ["${var.secret_arn}*"]  # * matches the version suffix in the ARN
+  }
+
+  dynamic "statement" {
+    for_each = var.rds_master_user_secret_arn != null ? [1] : []
+    content {
+      actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+      resources = ["${var.rds_master_user_secret_arn}*"]
+    }
   }
 }
 

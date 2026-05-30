@@ -60,3 +60,14 @@ variable "create_github_oidc_provider" {
   type    = bool
   default = true
 }
+
+# ARN of the RDS-managed Secrets Manager secret (rds!db-<instance-id>-admin).
+# RDS creates this secret automatically when manage_master_user_password = true
+# and rotates its password automatically. The ESO role needs read access to it
+# so ExternalSecret can compose DATABASE_URL from the individual fields without
+# relying on the manually-populated hello-login/<env> secret for the password.
+# Null before the RDS instance exists (e.g. in terraform test with mock providers).
+variable "rds_master_user_secret_arn" {
+  type    = string
+  default = null
+}

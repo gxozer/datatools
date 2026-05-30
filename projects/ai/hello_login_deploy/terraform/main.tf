@@ -139,7 +139,8 @@ module "iam" {
   cluster_name      = module.eks.cluster_name                     # used in role names
   oidc_provider_arn = module.eks.oidc_provider_arn                # required for IRSA trust policies
   oidc_provider_url = module.eks.oidc_provider_url                # used to build OIDC condition keys
-  secret_arn        = module.secrets.secret_arn                   # ESO role is scoped to this secret only
+  secret_arn                 = module.secrets.secret_arn                   # ESO role is scoped to this secret only
+  rds_master_user_secret_arn = module.rds.master_user_secret_arn           # ESO also reads the RDS-managed secret for DATABASE_URL
   github_org                  = var.github_org                              # GitHub Actions role is scoped to this org
   github_repo                 = var.github_repo                             # and this repo
   create_github_oidc_provider = var.create_github_oidc_provider             # account-global; only create once (staging)
