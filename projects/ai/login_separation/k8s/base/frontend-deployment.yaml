@@ -1,0 +1,82 @@
+# frontend-deployment.yaml
+#
+# Deployment for the React/nginx frontend container.
+# Nginx serves the compiled static files (HTML, CSS, JS) and proxies
+# /api/* requests to the backend Service.
+#
+# No initContainer needed here — the frontend has no database migrations.
+# No secrets needed — the frontend only needs the backend hostname.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+
+spec:
+  replicas: 2   # run 2 pods for availability; HPA in hpa.yaml can scale up to 6
+
+  selector:
+    matchLabels:
+      app: frontend   # manages pods with this label
+
+  # Rolling update — same strategy as the backend.
+  # maxSurge: 1 / maxUnavailable: 0 guarantees 2 pods always serve traffic during a deploy.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  template:
+    metadata:
+      labels:
+        app: frontend
+
+    spec:
+      # Run as UID 101 — the default nginx user inside the official nginx image.
+      # Running as non-root prevents privilege escalation if the container is compromised.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101    # nginx user ID in the nginx:alpine image
+
+      # Spread frontend pods across AZs (Availability Zones) just like the backend.
+      # Prevents both pods landing in the same zone — an AZ outage would take both down.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: frontend
+
+      containers:
+        - name: frontend
+          image: frontend   # placeholder; Kustomize replaces with the full ECR URL
+
+          ports:
+            - containerPort: 8080   # nginx listens on 8080 (not 80, to avoid needing root)
+
+          env:
+            # BACKEND_HOST — tells the nginx config where to proxy /api/* requests.
+            # "backend" resolves to the backend Service via Kubernetes DNS:
+            #   backend.<namespace>.svc.cluster.local
+            - name: BACKEND_HOST
+              value: "backend"
+
+          # livenessProbe — checks the nginx root path.
+          # If nginx stops responding, Kubernetes restarts the pod.
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 15
+
+          # resources — frontend is lighter than the backend (serves static files).
+          resources:
+            requests:
+              cpu: 50m        # 50 millicores = 0.05 CPU cores
+              memory: 64Mi    # 64 mebibytes — nginx is very memory-efficient
+            limits:
+              cpu: 200m       # 200 millicores = 0.2 CPU cores
+              memory: 128Mi

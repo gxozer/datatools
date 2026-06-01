@@ -1,0 +1,119 @@
+# ingress.yaml
+#
+# An Ingress is a Kubernetes resource that defines rules for routing external
+# HTTP/HTTPS traffic into Services inside the cluster.
+#
+# On its own, an Ingress is just a set of rules — it does nothing until an
+# Ingress Controller reads those rules and acts on them. Here the controller
+# is the AWS Load Balancer Controller (installed via Helm in the terraform
+# helm-addons module). It reads these Ingress objects and creates and configures
+# an ALB (Application Load Balancer) in AWS automatically.
+#
+# Two Ingress objects are defined — one for the backend API (/api/*) and one
+# for the frontend (/). They share the same ALB via the group.name annotation,
+# which tells the controller to merge them into a single load balancer with
+# two listener rules, rather than creating two separate ALBs.
+#
+# Acronyms:
+#   ALB   — Application Load Balancer (AWS layer-7 load balancer for HTTP/HTTPS)
+#   HTTP  — HyperText Transfer Protocol (unencrypted web traffic, port 80)
+#   HTTPS — HTTP Secure — HTTP encrypted with TLS (port 443)
+#   ACM   — AWS Certificate Manager — issues and manages TLS certificates
+#   IP    — Internet Protocol address
+
+# ── Backend Ingress ───────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-login-backend
+
+  # annotations — key/value metadata read by the ALB controller to configure the ALB.
+  # These are specific to the AWS Load Balancer Controller; other controllers use different keys.
+  annotations:
+    # Specifies which Ingress controller should handle this Ingress.
+    # "alb" tells the AWS Load Balancer Controller to pick this up.
+    kubernetes.io/ingress.class: alb
+
+    # internet-facing — the ALB is placed in public subnets and gets a public IP.
+    # The alternative is "internal" (private ALB, only reachable within the VPC).
+    alb.ingress.kubernetes.io/scheme: internet-facing
+
+    # ip — route traffic directly to pod IP addresses.
+    # The alternative is "instance" (route to node IP + NodePort).
+    # "ip" is more efficient and works with the vpc-cni plugin that gives pods real VPC IPs.
+    alb.ingress.kubernetes.io/target-type: ip
+
+    # Listen on both HTTP (80) and HTTPS (443).
+    # The ssl-redirect annotation below redirects all HTTP traffic to HTTPS.
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+
+    # ACM certificate ARN — set per-environment in the Kustomize overlay
+    # (k8s/overlays/<env>/ingress-patch.yaml). Not set here to avoid production
+    # inheriting the staging certificate.
+    # alb.ingress.kubernetes.io/certificate-arn: PATCHED_BY_OVERLAY
+
+    # Redirect HTTP (port 80) to HTTPS (port 443) automatically.
+    # Anyone who visits http://staging.gokhanozer.com will be sent to https://staging.gokhanozer.com.
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+
+    # group.name — groups multiple Ingress objects onto ONE shared ALB.
+    # Without this, each Ingress creates its own ALB (expensive and wasteful).
+    # Both Ingress objects in this file use the same group name "hello-login",
+    # so they share one ALB with two routing rules.
+    alb.ingress.kubernetes.io/group.name: hello-login
+
+    # group.order — when multiple Ingresses share an ALB, rules are evaluated in
+    # ascending order. Backend (order 1) is checked before frontend (order 2).
+    # This matters because /api is more specific than / — it must be checked first.
+    alb.ingress.kubernetes.io/group.order: "1"
+
+    # The path the ALB uses to check if the backend is healthy before sending traffic.
+    # If this path returns a non-2xx response, the ALB stops routing to that pod.
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api          # route any request starting with /api to the backend Service
+            pathType: Prefix    # Prefix means /api, /api/login, /api/health all match
+            backend:
+              service:
+                name: backend   # forward to the backend Service defined in services.yaml
+                port:
+                  number: 5001
+
+---
+
+# ── Frontend Ingress ──────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-login-frontend
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    # ACM certificate ARN — set per-environment in the Kustomize overlay.
+    # alb.ingress.kubernetes.io/certificate-arn: PATCHED_BY_OVERLAY
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/group.name: hello-login   # same group — shares the ALB with backend
+
+    # order 2 — evaluated after the backend rule.
+    # The / rule is a catch-all, so it must come after the more specific /api rule.
+    alb.ingress.kubernetes.io/group.order: "2"
+
+    alb.ingress.kubernetes.io/healthcheck-path: /   # nginx returns 200 on /
+
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /             # catch-all — any request not matched by /api goes to the frontend
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 8080

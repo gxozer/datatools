@@ -1,0 +1,75 @@
+# hpa.yaml
+#
+# An HPA (HorizontalPodAutoscaler) automatically adjusts the number of pod replicas
+# in a Deployment based on observed resource utilisation.
+#
+# "Horizontal" scaling means adding or removing pod copies (as opposed to
+# "vertical" scaling which means giving each pod more CPU/memory).
+#
+# How it works:
+#   1. The HPA controller checks the average CPU utilisation across all pods
+#      every 15 seconds (default).
+#   2. If average CPU > 70%, it scales UP — adds more pods (up to maxReplicas).
+#   3. If average CPU < 70%, it scales DOWN — removes pods (down to minReplicas).
+#   4. Scale-down has a 5-minute cooldown to prevent thrashing.
+#
+# CPU utilisation is measured as a percentage of the pod's requests.cpu value.
+# e.g. backend requests 100m CPU. If the pod uses 70m, that is 70% utilisation.
+#
+# Acronyms:
+#   HPA  — HorizontalPodAutoscaler
+#   CPU  — Central Processing Unit
+
+# ── Backend HPA ───────────────────────────────────────────────────────────────
+apiVersion: autoscaling/v2   # v2 supports multiple metric types (CPU, memory, custom)
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend
+
+spec:
+  # scaleTargetRef — which Deployment to scale.
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend       # must match metadata.name in backend-deployment.yaml
+
+  minReplicas: 2   # never scale below 2 — ensures availability across AZs
+  maxReplicas: 6   # never scale above 6 — matches eks_max_nodes in Terraform
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Scale up when average CPU across all backend pods exceeds 70%.
+          # 70% is a common threshold — high enough to use resources efficiently,
+          # low enough to scale before the app becomes unresponsive under load.
+          averageUtilization: 70
+
+---
+
+# ── Frontend HPA ──────────────────────────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend
+
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend     # must match metadata.name in frontend-deployment.yaml
+
+  minReplicas: 2
+  maxReplicas: 6
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Frontend (nginx serving static files) is less CPU-intensive than the backend.
+          # The same 70% threshold applies — nginx scales when it is CPU-bound.
+          averageUtilization: 70

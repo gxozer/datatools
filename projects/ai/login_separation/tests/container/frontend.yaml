@@ -1,0 +1,35 @@
+schemaVersion: "2.0.0"
+
+# Container structure tests for the React/Vite frontend image.
+# Written before the Dockerfile exists (TDD red phase).
+# Run with: container-structure-test test --image hello-login-frontend --config tests/container/frontend.yaml
+
+fileExistenceTests:
+  - name: "index.html is served"
+    path: "/usr/share/nginx/html/index.html"
+    shouldExist: true
+
+  - name: "assets directory is present"
+    path: "/usr/share/nginx/html/assets"
+    shouldExist: true
+
+  - name: "node_modules is NOT present in final image"
+    path: "/app/node_modules"
+    shouldExist: false
+
+  - name: "nginx config is present"
+    path: "/etc/nginx/templates/default.conf.template"
+    shouldExist: true
+
+metadataTest:
+  exposedPorts: ["8080"]
+
+commandTests:
+  - name: "nginx is available"
+    command: "nginx"
+    args: ["-v"]
+    expectedError: ["nginx version"]
+
+  - name: "index.html contains React app root"
+    command: "grep"
+    args: ["-q", "id=\"root\"", "/usr/share/nginx/html/index.html"]

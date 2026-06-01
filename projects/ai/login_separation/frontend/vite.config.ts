@@ -1,0 +1,24 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    // Proxy /api requests to the Flask backend during development.
+    // Override the target port via VITE_BACKEND_PORT env var for E2E tests.
+    proxy: {
+      '/api': `http://localhost:${process.env.VITE_BACKEND_PORT ?? '5001'}`,
+    },
+  },
+  test: {
+    // Use jsdom to simulate a browser environment for React component tests
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    globals: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+    },
+  },
+})

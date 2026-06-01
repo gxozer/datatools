@@ -1,0 +1,19 @@
+# ingress-patch.yaml (staging overlay)
+#
+# Patches the ACM certificate ARN onto both Ingress objects.
+# The base ingress.yaml intentionally omits the ARN so production cannot
+# accidentally inherit the staging certificate.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-login-backend
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:277070500859:certificate/2a27090f-a837-48b2-bada-802b09bf6995
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-login-frontend
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:277070500859:certificate/2a27090f-a837-48b2-bada-802b09bf6995

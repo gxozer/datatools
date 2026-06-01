@@ -1,0 +1,48 @@
+services:
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: hello_login
+      MYSQL_USER: hello
+      MYSQL_PASSWORD: hello
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "hello", "-phello"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  backend:
+    build: ./backend
+    image: hello-login-backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "5001:5001"
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      - FLASK_DEBUG=false
+      - MAIL_SUPPRESS_SEND=${MAIL_SUPPRESS_SEND:-0}
+      - JWT_SECRET=${JWT_SECRET:-dev-only-secret-change-for-production-32c}
+      - DATABASE_URL=${DATABASE_URL:-mysql+pymysql://hello:hello@mysql:3306/hello_login}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      - MAX_LOGIN_ATTEMPTS=${MAX_LOGIN_ATTEMPTS:-5}
+      - LOCKOUT_WINDOW_MINUTES=${LOCKOUT_WINDOW_MINUTES:-15}
+  frontend:
+    build: ./frontend
+    image: hello-login-frontend
+    ports:
+      - "3000:8080"
+    environment:
+      - BACKEND_HOST=backend
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:

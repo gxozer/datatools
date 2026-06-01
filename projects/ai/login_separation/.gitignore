@@ -1,0 +1,55 @@
+
+.idea
+# Dolt database files (added by bd init)
+.dolt/
+*.db
+
+# Beads backup (may contain secrets like API tokens)
+.beads/backup/
+
+# Python
+backend/.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.env
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+playwright-report/
+test-results/
+
+# OS
+.DS_Store
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfplan
+terraform/.terraform.lock.hcl
+
+# Dev infrastructure (infra/dev/)
+infra/dev/.terraform/
+infra/dev/*.tfstate
+infra/dev/*.tfstate.*
+infra/dev/*.tfplan
+infra/dev/.terraform.lock.hcl
+infra/dev/dev.tfvars
+
+# Dev secrets
+.env.ec2
+k8s/overlays/dev/.env.dev

@@ -1,0 +1,127 @@
+# github-actions-rbac.yaml
+#
+# RBAC (Role-Based Access Control) resources that grant the GitHub Actions CI/CD
+# pipeline permission to deploy to this cluster.
+#
+# How GitHub Actions authenticates to the cluster:
+#   1. The GitHub Actions workflow assumes the AWS IAM role defined in
+#      terraform/modules/iam/main.tf (github_actions role).
+#   2. It uses that IAM role to call "aws eks update-kubeconfig", which configures
+#      kubectl with a token. The token identifies the caller as the IAM role.
+#   3. EKS maps that IAM role to the Kubernetes user "github-actions" via an
+#      aws-auth ConfigMap (managed separately).
+#   4. These RBAC rules then define what "github-actions" is allowed to do.
+#
+# RBAC concepts:
+#   Role         — a set of permissions scoped to ONE namespace
+#   ClusterRole  — a set of permissions that apply ACROSS all namespaces (or cluster-level resources)
+#   RoleBinding  — grants a Role to a user/group/serviceaccount in ONE namespace
+#   ClusterRoleBinding — grants a ClusterRole across the entire cluster
+#
+# Acronyms:
+#   RBAC    — Role-Based Access Control
+#   CI/CD   — Continuous Integration / Continuous Delivery
+#   IAM     — Identity and Access Management (AWS)
+#   HPA     — HorizontalPodAutoscaler
+#   ESO     — External Secrets Operator
+
+# ── Role ─────────────────────────────────────────────────────────────────────
+# Namespace-scoped permissions: everything GitHub Actions needs to deploy
+# application resources into the hello-login-staging or hello-login-production namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-actions-deploy
+  # Note: no namespace here — Kustomize overlays set the namespace when applying.
+  # This Role is applied into whichever namespace the overlay targets.
+
+rules:
+  # Deployments and ReplicaSets — needed to roll out new image versions.
+  # "patch" and "update" are what kubectl rollout restart / set image uses.
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Core resources — needed to apply ConfigMaps, Services, Secrets, and inspect pods.
+  # apiGroups: [""] means the core API group (v1 resources like Pod, Service, ConfigMap).
+  - apiGroups: [""]
+    resources: ["configmaps", "services", "secrets", "pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Ingress — needed to apply or update the Ingress rules (routes to ALB).
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # HPA (HorizontalPodAutoscaler) — needed to apply hpa.yaml as part of deployment.
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # ExternalSecret — the ESO custom resource. GitHub Actions applies
+  # the ExternalSecret manifests in the overlays during deployment.
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+
+# ── RoleBinding ───────────────────────────────────────────────────────────────
+# Binds the Role above to the Kubernetes user "github-actions".
+# "github-actions" is the username EKS assigns to the GitHub Actions IAM role
+# via the aws-auth ConfigMap mapping.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-actions-deploy
+
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-actions-deploy   # must match the Role name above
+
+subjects:
+  - kind: User
+    name: github-actions         # the Kubernetes username mapped from the IAM role
+    apiGroup: rbac.authorization.k8s.io
+
+---
+
+# ── ClusterRole ───────────────────────────────────────────────────────────────
+# Cluster-level permissions: resources that exist outside any namespace,
+# or that GitHub Actions needs read access to across all namespaces.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: github-actions-cluster-deploy
+
+rules:
+  # Read-only access to Services and Ingresses cluster-wide.
+  # Used to verify deployment state (e.g. check load balancer status) without
+  # needing write access outside the app namespace.
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+
+---
+
+# ── ClusterRoleBinding ────────────────────────────────────────────────────────
+# Binds the ClusterRole above to the same "github-actions" user.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: github-actions-cluster-deploy
+
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: github-actions-cluster-deploy
+
+subjects:
+  - kind: User
+    name: github-actions
+    apiGroup: rbac.authorization.k8s.io

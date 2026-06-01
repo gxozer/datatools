@@ -1,0 +1,19 @@
+# Debug overlay — enables remote-pdb inside the container on port 4444.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --build
+#
+# Add a breakpoint in code: import remote_pdb; remote_pdb.set_trace()
+# Then connect: nc localhost 4444
+
+services:
+  backend:
+    build:
+      context: ./backend
+      target: debug
+    ports:
+      - "4444:4444"
+    environment:
+      - FLASK_DEBUG=true
+      - REMOTE_PDB_HOST=0.0.0.0
+      - REMOTE_PDB_PORT=4444

@@ -1,0 +1,31 @@
+# kustomization.yaml  (base)
+#
+# Kustomize is a tool built into kubectl that assembles Kubernetes manifests
+# from a base set of files plus environment-specific overlays, without templating.
+#
+# This file is the BASE — it lists all the manifest files that are common to
+# every environment (staging and production). The overlays in
+# k8s/overlays/staging/ and k8s/overlays/production/ reference this base and
+# add or override things specific to each environment.
+#
+# How to apply (from the repo root):
+#   kubectl apply -k k8s/overlays/staging/
+#   kubectl apply -k k8s/overlays/production/
+#
+# You never apply the base directly — always apply an overlay.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# resources — the list of manifest files to include.
+# Kustomize reads all of these and merges them into a single set of resources.
+# Overlays can add more resources on top of this list.
+resources:
+  - configmap.yaml           # non-sensitive app configuration (ports, URLs, mail settings)
+  - backend-deployment.yaml  # Flask API server — 2 replicas, rolling updates, migrations
+  - frontend-deployment.yaml # React/nginx static file server — 2 replicas
+  - services.yaml            # ClusterIP Services giving stable DNS names to the pods
+  - ingress.yaml             # ALB routing rules: /api/* → backend, / → frontend
+  - hpa.yaml                 # HorizontalPodAutoscalers — auto-scale on CPU > 70%
+  - cluster-secret-store.yaml  # ESO ClusterSecretStore — tells ESO how to reach AWS Secrets Manager
+  - github-actions-rbac.yaml   # RBAC rules granting GitHub Actions CI/CD deploy permissions
