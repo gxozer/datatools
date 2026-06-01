@@ -4,7 +4,14 @@ variables {
   environment = "staging"
 }
 
+# All ECR runs use command = plan to avoid apply/teardown.
+# prevent_destroy = true on aws_ecr_repository blocks teardown even with mock
+# providers, causing the test suite to fail. Since all assertions check values
+# that are fully known at plan time (names, settings), plan is sufficient.
+
 run "creates_backend_repo" {
+  command = plan
+
   module {
     source = "./modules/ecr"
   }
@@ -16,6 +23,8 @@ run "creates_backend_repo" {
 }
 
 run "creates_frontend_repo" {
+  command = plan
+
   module {
     source = "./modules/ecr"
   }
@@ -27,6 +36,8 @@ run "creates_frontend_repo" {
 }
 
 run "scan_on_push_enabled" {
+  command = plan
+
   module {
     source = "./modules/ecr"
   }
@@ -38,6 +49,8 @@ run "scan_on_push_enabled" {
 }
 
 run "lifecycle_policies_exist" {
+  command = plan
+
   module {
     source = "./modules/ecr"
   }
