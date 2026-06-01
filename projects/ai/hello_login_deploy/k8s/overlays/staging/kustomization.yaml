@@ -1,19 +1,51 @@
+# kustomization.yaml  (staging overlay)
+#
+# This overlay customises the base manifests for the STAGING environment.
+# It is applied with: kubectl apply -k k8s/overlays/staging/
+#
+# What this overlay does on top of the base:
+#   1. Sets the namespace for all resources to "hello-login-staging"
+#   2. Replaces the placeholder image names with real ECR URLs tagged "latest"
+#   3. Adds the ExternalSecret manifest (staging-specific secret paths)
+#   4. Patches the ConfigMap with staging-specific URLs
+
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# namespace — applies this namespace to every resource in this overlay.
+# All base resources (Deployment, Service, Ingress, etc.) are created inside
+# "hello-login-staging", isolating them from the production namespace.
 namespace: hello-login-staging
 
 resources:
+  # Include everything from the base (all 8 manifests listed in base/kustomization.yaml).
   - ../../base
+
+  # Add the ExternalSecret for staging — tells ESO to read from hello-login/staging
+  # in AWS Secrets Manager and write the values into a Kubernetes Secret.
   - external-secret.yaml
 
+# images — replaces the placeholder image names in the base Deployments with
+# real ECR (Elastic Container Registry) URLs.
+# "name" is the placeholder value used in the base Deployment's image field.
+# "newName" is the full ECR registry URL.
+# "newTag" is the Docker image tag to deploy.
 images:
   - name: backend
+    # 277070500859 — AWS account ID
+    # dkr.ecr.us-west-2.amazonaws.com — the ECR registry endpoint for us-west-2
+    # hello-login-backend — the ECR repository name
     newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend
+    # "latest" — always deploy the most recently pushed image.
+    # Used for staging where fast iteration matters more than pinning a specific version.
     newTag: latest
+
   - name: frontend
     newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend
     newTag: latest
 
+# patches — apply changes to specific resources from the base.
+# configmap-patch.yaml overrides FRONTEND_URL and CORS_ORIGINS with staging-specific values.
 patches:
   - path: configmap-patch.yaml
+  - path: ingress-patch.yaml   # sets the staging ACM certificate ARN on both Ingress objects

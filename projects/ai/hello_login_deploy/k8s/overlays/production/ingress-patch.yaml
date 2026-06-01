@@ -1,0 +1,21 @@
+# ingress-patch.yaml (production overlay)
+#
+# Patches the ACM certificate ARN for production.gokhanozer.com onto both Ingress objects.
+# Replace REPLACE_WITH_PRODUCTION_CERT_ARN with the ARN from:
+#   AWS Console → Certificate Manager → us-west-2 → production.gokhanozer.com
+# Or via CLI:
+#   aws acm list-certificates --region us-west-2 --query 'CertificateSummaryList[?DomainName==`production.gokhanozer.com`].CertificateArn' --output text
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-login-backend
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: REPLACE_WITH_PRODUCTION_CERT_ARN
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-login-frontend
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: REPLACE_WITH_PRODUCTION_CERT_ARN

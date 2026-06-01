@@ -1,21 +1,48 @@
+# services.yaml
+#
+# A Service is a Kubernetes resource that gives a stable network identity to a
+# set of pods. Pods are ephemeral — they come and go, and their IP addresses change.
+# A Service provides a fixed name and IP that other pods can always reach,
+# regardless of which pods are currently running behind it.
+#
+# Services also act as an internal load balancer — requests are distributed
+# across all healthy pods that match the selector.
+#
+# Both Services here are of the default type: ClusterIP.
+# ClusterIP means the Service is only reachable from WITHIN the cluster.
+# External traffic reaches the app via the Ingress (defined in ingress.yaml),
+# which routes through the ALB (Application Load Balancer) to these Services.
+
+# ── Backend Service ───────────────────────────────────────────────────────────
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend
+  name: backend   # the DNS name other pods use to reach the backend
+                  # e.g. from the frontend: http://backend:5001/api/...
+
 spec:
+  # selector — which pods this Service routes traffic to.
+  # Matches pods with the label app=backend (set in backend-deployment.yaml).
   selector:
     app: backend
+
   ports:
-    - port: 5001
-      targetPort: 5001
+    - port: 5001        # the port this Service listens on (what callers connect to)
+      targetPort: 5001  # the port on the pod to forward traffic to
+                        # must match containerPort in backend-deployment.yaml
+
 ---
+
+# ── Frontend Service ──────────────────────────────────────────────────────────
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend
+  name: frontend   # DNS name: http://frontend:8080 from within the cluster
+
 spec:
   selector:
-    app: frontend
+    app: frontend   # routes traffic to pods with label app=frontend
+
   ports:
     - port: 8080
-      targetPort: 8080
+      targetPort: 8080   # must match containerPort in frontend-deployment.yaml

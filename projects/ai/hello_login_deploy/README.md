@@ -381,686 +381,391 @@ EXIT;
 
 ---
 
-## Deploying to Amazon EKS
+## Deploying to Dev EC2 (cheap, ~$15-20/month)
 
-Full technical details are in [docs/PRD_eks_deployment.md](docs/PRD_eks_deployment.md) and [docs/TDS_eks_deployment.md](docs/TDS_eks_deployment.md). This section is the operational runbook.
+A single EC2 t3.small running Docker Compose — backend, frontend, MySQL, and Caddy (HTTPS). No EKS, no RDS, no NAT Gateway. Good for iterating on the app without paying for the full EKS stack.
+
+**How it compares to EKS staging:**
+
+| | Dev EC2 | EKS staging |
+|---|---|---|
+| Cost | ~$15-20/month | ~$150/month |
+| Startup time | ~3 min | ~20 min |
+| Kubernetes | No (Docker Compose) | Yes |
+| TLS | Caddy + Let's Encrypt | ACM + ALB |
+| Database | MySQL in container | RDS |
+| HA / autoscaling | No | Yes |
+
+---
 
 ### Prerequisites
 
-- AWS CLI configured with an `admin` profile
-- `eksctl` — `brew install eksctl`
-- `kubectl` — `brew install kubectl`
-- `helm` — `brew install helm`
+- AWS CLI configured and authenticated
+- Terraform >= 1.7 — `brew install hashicorp/tap/terraform`
+- Docker Desktop
+- An EC2 key pair in us-west-2 — create it with the CLI (key pairs are region-specific):
+  ```bash
+  aws ec2 create-key-pair \
+    --key-name hello-login-dev \
+    --region us-west-2 \
+    --query 'KeyMaterial' \
+    --output text > ~/.ssh/hello-login-dev.pem
+  chmod 400 ~/.ssh/hello-login-dev.pem
+  ```
+- A domain name with DNS you can edit
+
+---
+
+### Step 1 — Provision the EC2 instance
 
 ```bash
-export AWS_PROFILE=admin
-export AWS_DEFAULT_REGION=us-west-2
+cp infra/dev/dev.tfvars.example infra/dev/dev.tfvars
 ```
 
-Setting `AWS_DEFAULT_REGION` means you don't need `--region us-west-2` on every command.
+Edit `infra/dev/dev.tfvars` — set your key pair name and restrict SSH to your IP:
+
+```hcl
+key_name        = "your-key-pair-name"
+ssh_cidr_blocks = ["YOUR_IP/32"]   # find your IPv4: curl -4 ifconfig.me
+```
+
+Apply:
+
+```bash
+make dev-init
+! terraform -chdir=infra/dev apply -var-file=dev.tfvars
+```
+
+Get the public IP:
+
+```bash
+! terraform -chdir=infra/dev output public_ip
+```
 
 ---
 
-### Phase 1 — AWS Infrastructure
+### Step 2 — Create a DNS A record
 
-#### 1.1 Provision EKS cluster and ECR repositories (PR-61)
+Log in to your domain registrar (e.g. Namecheap, GoDaddy, Cloudflare, Route 53) and create an **A record**:
 
-**Step 1 — Set AWS profile and region**
+| Field | Value |
+|---|---|
+| Type | A |
+| Name / Host | `dev` (or whatever subdomain you want — this becomes `dev.yourdomain.com`) |
+| Value / Points to | `54.201.132.10` (the IP from Step 1) |
+| TTL | 300 (or the lowest available) |
 
-All commands in this section require admin credentials. Set them for the session:
+The exact UI varies by registrar but every DNS provider supports A records. If you're on Cloudflare, turn **proxy off** (grey cloud, DNS only) — Caddy needs a direct connection to obtain the Let's Encrypt certificate.
 
+Verify propagation before continuing:
+
+```bash
+dig +short dev.yourdomain.com
+# should return: 54.201.132.10
 ```
-export AWS_PROFILE=admin
-export AWS_DEFAULT_REGION=us-west-2
-```
 
-Verify you're using the right account:
-
-```
-aws sts get-caller-identity
-```
-
-Expected: account `277070500859`, not `dev1`.
+DNS typically propagates within 1–5 minutes with a low TTL. Caddy will automatically obtain the TLS certificate on first startup once the DNS record resolves correctly.
 
 ---
 
-**Step 2 — Create the EKS cluster**
+### Step 3 — Configure secrets
 
-Creates the Kubernetes control plane (managed by AWS) and a node group of 2 `t3.small` EC2 worker nodes with autoscaling up to 6. Takes ~15 minutes.
-
-```
-eksctl create cluster --name hello-login --region us-west-2 --nodegroup-name standard --node-type t3.small --nodes 2 --nodes-min 2 --nodes-max 6 --managed
+```bash
+cp .env.ec2.example .env.ec2
 ```
 
-If the cluster already exists (e.g. after a session break), reconnect instead:
+Edit `.env.ec2` — at minimum, set these three values:
 
-```
-aws eks update-kubeconfig --name hello-login --region us-west-2
-```
-
-Verify the cluster is reachable:
-
-```
-kubectl get nodes
+```bash
+DEV_DOMAIN=dev.yourdomain.com
+FRONTEND_URL=https://dev.yourdomain.com
+CORS_ORIGINS=https://dev.yourdomain.com
+JWT_SECRET=<run: python3 -c "import secrets; print(secrets.token_hex(32))">
 ```
 
-Expected: 2 nodes in `Ready` state.
+**To enable real email sending** (signup verification, password reset), fill in your Brevo SMTP credentials in `.env.ec2`:
+
+```bash
+MAIL_SUPPRESS_SEND=0
+MAIL_USERNAME=your-brevo-login@example.com
+MAIL_PASSWORD=your-brevo-smtp-key
+MAIL_DEFAULT_SENDER=your-brevo-login@example.com
+```
+
+To get Brevo credentials: log in to [brevo.com](https://brevo.com) → **Settings → SMTP & API → SMTP** → generate an SMTP key. Also verify your sender address under **Senders, Domains & Dedicated IPs**.
+
+If you don't have Brevo set up yet, leave `MAIL_SUPPRESS_SEND=1` for now — signup and login still work, emails are just silently dropped.
 
 ---
 
-**Step 3 — Create ECR repositories**
+### Step 4 — Build and push Docker images
 
-ECR (Elastic Container Registry) is the private Docker registry where CI/CD pushes built images. Check if repos already exist:
+First, ensure the ECR repositories exist (they are deleted when the EKS staging environment is torn down):
 
-```
-aws ecr describe-repositories --region us-west-2 --query 'repositories[].repositoryName'
-```
-
-If `hello-login-backend` or `hello-login-frontend` are missing, create them:
-
-```
+```bash
 aws ecr create-repository --repository-name hello-login-backend --region us-west-2
-```
-
-```
 aws ecr create-repository --repository-name hello-login-frontend --region us-west-2
 ```
 
----
+These commands are safe to run even if the repositories already exist — they will return an error that can be ignored.
 
-**Step 4 — Test image push (optional but recommended)**
+```bash
+# Authenticate Docker to ECR
+aws ecr get-login-password --region us-west-2 | \
+  docker login --username AWS --password-stdin \
+  277070500859.dkr.ecr.us-west-2.amazonaws.com
 
-Confirms Docker can authenticate and push to ECR before the CI/CD pipeline runs:
+# Build for x86_64 (EC2 is amd64, not Apple Silicon arm64)
+docker build --platform linux/amd64 -t hello-login-backend ./backend
+docker tag hello-login-backend:latest \
+  277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:latest
+docker push 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:latest
 
+docker build --platform linux/amd64 -t hello-login-frontend ./frontend
+docker tag hello-login-frontend:latest \
+  277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend:latest
+docker push 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend:latest
 ```
-AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-```
-
-```
-aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $AWS_ACCOUNT.dkr.ecr.us-west-2.amazonaws.com
-```
-
-```
-docker build -t $AWS_ACCOUNT.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:test backend/
-```
-
-```
-docker push $AWS_ACCOUNT.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:test
-```
-
-Expected: `Pushed` confirmation with no errors.
 
 ---
 
-#### 1.2 Namespaces and AWS Load Balancer Controller (PR-62)
+### Step 5 — Deploy
 
-**Step 1 — Enable OIDC for IRSA**
-
-EKS (Elastic Kubernetes Service) uses an OIDC (OpenID Connect) identity provider to let Kubernetes service accounts assume IAM (Identity and Access Management) roles without storing AWS credentials inside the cluster. This is required for the ALB (Application Load Balancer) controller and ESO (External Secrets Operator) to make authenticated calls to AWS APIs. Run once per cluster:
-
-```
-eksctl utils associate-iam-oidc-provider --region us-west-2 --cluster hello-login --approve
+```bash
+make dev-deploy
 ```
 
-Verify:
+This copies `docker-compose.ec2.yml`, `Caddyfile`, and `.env.ec2` to the EC2 instance, logs Docker into ECR, pulls the images, and starts the stack.
 
-```
-aws iam list-open-id-connect-providers
-```
-
-Expected: one provider listed with the cluster's OIDC URL.
+Visit `https://dev.yourdomain.com` — Caddy obtains the TLS certificate automatically on first request (takes a few seconds).
 
 ---
 
-**Step 2 — Create namespaces**
+### Updating the app
 
-Namespaces logically separate staging and production resources within the same cluster:
+After pushing new images to ECR:
 
+```bash
+make dev-deploy
 ```
+
+The command re-pulls images and restarts containers. The MySQL data volume persists across restarts.
+
+---
+
+### Useful commands
+
+```bash
+make dev-ssh      # open an SSH session on the EC2 instance
+make dev-logs     # tail Docker Compose logs (all services)
+make dev-down     # stop the stack (instance keeps running, no cost saved)
+```
+
+To save cost when not using dev, stop the instance from the AWS console (EC2 → Instances → Stop). The Elastic IP stays assigned so DNS doesn't break.
+
+---
+
+### Teardown
+
+```bash
+make dev-down
+! terraform -chdir=infra/dev destroy -var-file=dev.tfvars
+```
+
+This deletes the EC2 instance, Elastic IP, security group, and IAM role. The ECR images and MySQL data (stored in an EBS volume on the instance) are also deleted.
+
+---
+
+### Alternative: k3s on the same EC2
+
+If you want to test the Kubernetes manifests on the dev instance (without paying for EKS), install k3s and use the dev Kustomize overlay:
+
+```bash
+# On the EC2 instance
+curl -sfL https://get.k3s.io | sh -
+# Copy /etc/rancher/k3s/k3s.yaml to ~/.kube/config locally (update server IP)
+
+# Locally — populate secrets file
+cp k8s/overlays/dev/.env.dev.example k8s/overlays/dev/.env.dev
+# edit .env.dev: set JWT_SECRET, update MAIL_* if needed
+
+# Update the EC2 IP in the dev overlay configmap patch
+# Edit k8s/overlays/dev/configmap-patch.yaml: replace YOUR_EC2_IP
+
+make dev-k8s-apply
+```
+
+This uses Traefik (bundled with k3s) instead of the ALB, and runs MySQL as a pod instead of RDS.
+
+---
+
+## Deploying to Amazon EKS
+
+Infrastructure is managed with Terraform. Full technical details are in the `docs/` folder:
+
+- [docs/PRD_terraform_iac.md](docs/PRD_terraform_iac.md) — what to build and why
+- [docs/TDS_terraform_iac.md](docs/TDS_terraform_iac.md) — technical design and module breakdown
+- [docs/GUIDE_terraform_iac.md](docs/GUIDE_terraform_iac.md) — line-by-line explanation of every Terraform file
+- [docs/TEST_PLAN_terraform_iac.md](docs/TEST_PLAN_terraform_iac.md) — test cases and verification steps
+
+---
+
+### Prerequisites
+
+- AWS CLI configured and authenticated
+- Terraform >= 1.7 — `brew install hashicorp/tap/terraform`
+- kubectl — `brew install kubectl`
+- Docker Desktop
+
+---
+
+### Phase 1 — Provision infrastructure with Terraform
+
+```bash
+cd terraform
+terraform init
+terraform workspace new staging
+terraform plan -var-file=staging.tfvars
+terraform apply -var-file=staging.tfvars
+```
+
+This creates (in ~20 minutes): VPC, EKS cluster, RDS MySQL, ECR repos, Secrets Manager secret, IAM roles, ALB controller, External Secrets Operator.
+
+---
+
+### Phase 2 — Configure kubectl
+
+```bash
+aws eks update-kubeconfig --name hello-login-staging --region us-west-2
+```
+
+---
+
+### Phase 3 — Build and push Docker images
+
+```bash
+# Authenticate Docker to ECR
+aws ecr get-login-password --region us-west-2 | \
+  docker login --username AWS --password-stdin \
+  277070500859.dkr.ecr.us-west-2.amazonaws.com
+
+# Build for x86_64 (EKS nodes run on amd64, not Apple Silicon arm64)
+docker build --platform linux/amd64 -t hello-login-backend ./backend
+docker tag hello-login-backend:latest \
+  277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:latest
+docker push 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:latest
+
+docker build --platform linux/amd64 -t hello-login-frontend ./frontend
+docker tag hello-login-frontend:latest \
+  277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend:latest
+docker push 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend:latest
+```
+
+---
+
+### Phase 4 — Populate secrets
+
+Get the RDS password from Terraform state, then populate the Secrets Manager secret:
+
+```bash
+# Get the generated RDS password
+terraform -chdir=terraform state pull | \
+  python3 -c "import sys,json; s=json.load(sys.stdin); [print(r['instances'][0]['attributes']['result']) for r in s['resources'] if r.get('module')=='module.rds' and r['type']=='random_password']"
+
+# Get the RDS endpoint
+terraform -chdir=terraform output db_endpoint
+
+# Write secrets (substitute real values)
+aws secretsmanager put-secret-value \
+  --secret-id hello-login/staging \
+  --region us-west-2 \
+  --secret-string '{
+    "DATABASE_URL": "mysql+pymysql://admin:<password>@<db-endpoint>/hello_login",
+    "JWT_SECRET": "<run: python3 -c \"import secrets; print(secrets.token_hex(32))\">",
+    "MAIL_PASSWORD": "<brevo-smtp-key>",
+    "MAIL_USERNAME": "<brevo-login-email>",
+    "MAIL_DEFAULT_SENDER": "<sender-email>"
+  }'
+```
+
+---
+
+### Phase 5 — Deploy the app
+
+```bash
 kubectl create namespace hello-login-staging
-```
-
-```
-kubectl create namespace hello-login-production
+kubectl apply -k k8s/overlays/staging/
 ```
 
 Verify:
-
-```
-kubectl get namespaces | grep hello-login
-```
-
-Expected: both namespaces in `Active` state.
-
----
-
-**Step 3 — Create IAM policy for the ALB controller**
-
-Downloads the official AWS policy that grants the controller permission to create and manage ALBs:
-
-```
-curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json
-```
-
-Check if the policy already exists first:
-
-```
-aws iam list-policies --query 'Policies[?PolicyName==`AWSLoadBalancerControllerIAMPolicy`].PolicyName' --output text
-```
-
-If the output is empty, create it:
-
-```
-aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam_policy.json
-```
-
-If it already exists, skip this step.
-
----
-
-**Step 4 — Create IRSA for the ALB controller**
-
-Links a Kubernetes service account to an IAM role so the controller pod can call AWS APIs without storing credentials:
-
-```
-AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-```
-
-```
-eksctl create iamserviceaccount --cluster hello-login --namespace kube-system --name aws-load-balancer-controller --attach-policy-arn arn:aws:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy --approve --region us-west-2
-```
-
----
-
-**Step 5 — Install the ALB controller via Helm**
-
-Deploys the controller pod into `kube-system`. It watches for Ingress resources and automatically provisions AWS ALBs:
-
-```
-helm repo add eks https://aws.github.io/eks-charts && helm repo update
-```
-
-```
-helm install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system --set clusterName=hello-login --set serviceAccount.create=false --set serviceAccount.name=aws-load-balancer-controller
-```
-
-Verify:
-
-```
-kubectl get deployment -n kube-system aws-load-balancer-controller
-```
-
-Expected: `2/2 READY`.
-
----
-
-#### 1.3 Provision RDS MySQL (PR-69)
-
-**Step 1 — Enable DNS on the VPC**
-
-RDS requires DNS resolution and DNS hostnames to be enabled on the VPC. Without this, the subnet group creation fails.
-
-First get the VPC ID from the EKS cluster:
-
-```
-VPC_ID=$(aws eks describe-cluster --name hello-login --region us-west-2 --query 'cluster.resourcesVpcConfig.vpcId' --output text)
-```
-
-```
-echo "VPC: $VPC_ID"
-```
-
-Then enable DNS:
-
-```
-aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-support --region us-west-2
-```
-
-```
-aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-hostnames --region us-west-2
-```
-
----
-
-**Step 2 — Create a DB subnet group**
-
-Tells RDS which subnets it can use. Must span at least 2 availability zones. Uses the 3 private subnets created by eksctl:
-
-Create the DB subnet group via the **AWS Console** — the CLI command fails due to an account-level subnet validation issue that the Console bypasses:
-
-1. Go to **RDS → Subnet groups → Create DB subnet group**
-2. Name: `hello-login-db-subnet`
-3. VPC: select the VPC matching `$VPC_ID`
-4. Add subnets from at least 2 AZs (us-west-2a and us-west-2b)
-5. Click **Create**
-
----
-
-**Step 3 — Create a security group for RDS**
-
-Controls which resources can connect to the database. Only EKS nodes are allowed on port 3306:
-
-```
-RDS_SG=$(aws ec2 create-security-group --group-name hello-login-rds-sg --description "Allow MySQL from EKS nodes" --vpc-id $VPC_ID --region us-west-2 --query 'GroupId' --output text)
-```
-
-```
-NODE_SG=$(aws eks describe-cluster --name hello-login --region us-west-2 --query 'cluster.resourcesVpcConfig.clusterSecurityGroupId' --output text)
-```
-
-```
-aws ec2 authorize-security-group-ingress --group-id $RDS_SG --protocol tcp --port 3306 --source-group $NODE_SG --region us-west-2
-```
-
----
-
-**Step 4 — Create the RDS instance**
-
-Provisions a `db.t3.micro` MySQL 8.0 instance. Not publicly accessible — only reachable from within the VPC:
-
-```
-aws rds create-db-instance --db-instance-identifier hello-login --db-instance-class db.t3.micro --engine mysql --engine-version 8.0 --master-username hello --master-user-password helloRDS1 --db-name hello_login --db-subnet-group-name hello-login-db-subnet --vpc-security-group-ids $RDS_SG --no-publicly-accessible --allocated-storage 20 --region us-west-2
-```
-
-Wait for it to become available (~5 minutes):
-
-```
-aws rds wait db-instance-available --db-instance-identifier hello-login --region us-west-2
-```
-
----
-
-**Step 5 — Get the RDS endpoint**
-
-Save this value — it is needed for the DATABASE_URL secret in the next step:
-
-```
-aws rds describe-db-instances --db-instance-identifier hello-login --region us-west-2 --query 'DBInstances[0].Endpoint.Address' --output text
-```
-
-The DATABASE_URL will be: `mysql+pymysql://hello:helloRDS1@<endpoint>:3306/hello_login`
-
----
-
-#### 1.4 Secrets Manager and External Secrets Operator (PR-63)
-
-**Step 1 — Create secrets in AWS Secrets Manager**
-
-Secrets Manager stores sensitive credentials outside the cluster. Do NOT pass JSON inline — use a file to avoid shell quoting issues.
-
-Generate a JWT secret:
-
-```
-python3 -c "import secrets; print(secrets.token_hex(32))"
-```
-
-Write staging credentials to a file (fill in actual values):
 
 ```bash
-cat > /tmp/staging-secret.json << 'EOF'
-{
-  "DATABASE_URL": "mysql+pymysql://hello:helloRDS1@<rds-endpoint>:3306/hello_login",
-  "JWT_SECRET": "<output-from-above>",
-  "MAIL_PASSWORD": "<brevo-smtp-key>",
-  "MAIL_USERNAME": "<brevo-login-email>",
-  "MAIL_DEFAULT_SENDER": "<sender-email>"
-}
-EOF
+kubectl get pods -n hello-login-staging        # all pods Running
+kubectl get externalsecret -n hello-login-staging  # SecretSynced = True
+kubectl get ingress -n hello-login-staging     # shows ALB address
 ```
 
-```
-aws secretsmanager create-secret --name hello-login/staging --region us-west-2 --secret-string file:///tmp/staging-secret.json
-```
-
-Repeat for production (use a different `JWT_SECRET`):
-
-```bash
-cat > /tmp/production-secret.json << 'EOF'
-{
-  "DATABASE_URL": "mysql+pymysql://hello:helloRDS1@<rds-endpoint>:3306/hello_login",
-  "JWT_SECRET": "<different-strong-secret>",
-  "MAIL_PASSWORD": "<brevo-smtp-key>",
-  "MAIL_USERNAME": "<brevo-login-email>",
-  "MAIL_DEFAULT_SENDER": "<sender-email>"
-}
-EOF
-```
-
-```
-aws secretsmanager create-secret --name hello-login/production --region us-west-2 --secret-string file:///tmp/production-secret.json
-```
-
-To update a secret later:
-
-```
-aws secretsmanager put-secret-value --secret-id hello-login/staging --region us-west-2 --secret-string file:///tmp/staging-secret.json
-```
-
-Verify:
-
-```
-aws secretsmanager list-secrets --region us-west-2 --query 'SecretList[].Name'
-```
-
-Expected: both `hello-login/staging` and `hello-login/production` listed.
-
----
-
-**Step 2 — Install External Secrets Operator (ESO)**
-
-ESO watches for `ExternalSecret` resources in the cluster and automatically syncs values from Secrets Manager into Kubernetes Secrets. Pods then use those Kubernetes Secrets as environment variables:
-
-```
-helm repo add external-secrets https://charts.external-secrets.io && helm repo update
-```
-
-```
-helm install external-secrets external-secrets/external-secrets -n external-secrets --create-namespace
-```
-
-Verify:
-
-```
-kubectl get pods -n external-secrets
-```
-
-Expected: ESO pods in `Running` state.
-
----
-
-**Step 3 — Create IRSA for ESO**
-
-ESO needs an IAM role to call Secrets Manager. Create the policy and link it to the ESO service account:
-
-```bash
-cat > /tmp/eso-policy.json << 'EOF'
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "secretsmanager:GetSecretValue",
-        "secretsmanager:DescribeSecret"
-      ],
-      "Resource": "arn:aws:secretsmanager:us-west-2:*:secret:hello-login/*"
-    }
-  ]
-}
-EOF
-```
-
-```
-aws iam create-policy --policy-name ESOSecretsManagerPolicy --policy-document file:///tmp/eso-policy.json
-```
-
-If `ESOSecretsManagerPolicy` already exists, skip the create. Then:
-
-```
-AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-```
-
-```
-eksctl create iamserviceaccount --cluster hello-login --namespace external-secrets --name external-secrets --attach-policy-arn arn:aws:iam::${AWS_ACCOUNT}:policy/ESOSecretsManagerPolicy --approve --region us-west-2
-```
-
-Verify:
-
-```
-kubectl get serviceaccount external-secrets -n external-secrets -o yaml | grep eks.amazonaws.com
-```
-
-Expected: an annotation with the IAM role ARN.
-
-If the annotation is missing (because Helm created the service account before eksctl), rerun with:
-
-```
-eksctl create iamserviceaccount --cluster hello-login --namespace external-secrets --name external-secrets --attach-policy-arn arn:aws:iam::${AWS_ACCOUNT}:policy/ESOSecretsManagerPolicy --approve --region us-west-2 --override-existing-serviceaccounts
-```
-
----
-
-**Step 4 — Create a ClusterSecretStore**
-
-The ClusterSecretStore tells ESO where to read secrets from (AWS Secrets Manager in us-west-2).
-
-Note: the API version is `external-secrets.io/v1` (not `v1beta1`). Use Python to write the file — heredocs break when pasted due to indentation:
-
-```
-printf 'apiVersion: external-secrets.io/v1\nkind: ClusterSecretStore\nmetadata:\n  name: aws-secrets-manager\nspec:\n  provider:\n    aws:\n      service: SecretsManager\n      region: us-west-2\n      auth:\n        jwt:\n          serviceAccountRef:\n            name: external-secrets\n            namespace: external-secrets\n' > k8s/base/cluster-secret-store.yaml
-```
-
-```
-kubectl apply -f k8s/base/cluster-secret-store.yaml
-```
-
-Verify:
-
-```
-kubectl get clustersecretstore
-```
-
-Expected: `aws-secrets-manager` with `READY = True`.
-
----
-
-**Step 5 — Create ExternalSecret manifests**
-
-ExternalSecret resources tell ESO which keys to pull from Secrets Manager and map into Kubernetes Secrets. Create one per namespace.
-
-ExternalSecret manifests belong in the repo at `k8s/base/`. Create the staging manifest (API version is `v1`, not `v1beta1`):
-
-```
-printf 'apiVersion: external-secrets.io/v1\nkind: ExternalSecret\nmetadata:\n  name: hello-login-secrets\nspec:\n  refreshInterval: 1h\n  secretStoreRef:\n    name: aws-secrets-manager\n    kind: ClusterSecretStore\n  target:\n    name: hello-login-secrets\n  data:\n    - secretKey: DATABASE_URL\n      remoteRef:\n        key: hello-login/staging\n        property: DATABASE_URL\n    - secretKey: JWT_SECRET\n      remoteRef:\n        key: hello-login/staging\n        property: JWT_SECRET\n    - secretKey: MAIL_PASSWORD\n      remoteRef:\n        key: hello-login/staging\n        property: MAIL_PASSWORD\n    - secretKey: MAIL_USERNAME\n      remoteRef:\n        key: hello-login/staging\n        property: MAIL_USERNAME\n    - secretKey: MAIL_DEFAULT_SENDER\n      remoteRef:\n        key: hello-login/staging\n        property: MAIL_DEFAULT_SENDER\n' > k8s/base/external-secret-staging.yaml
-```
-
-Apply to staging:
-
-```
-kubectl apply -f k8s/base/external-secret-staging.yaml -n hello-login-staging
-```
-
-Create and apply the production manifest (same file, `hello-login/production` key):
-
-```
-printf 'apiVersion: external-secrets.io/v1\nkind: ExternalSecret\nmetadata:\n  name: hello-login-secrets\nspec:\n  refreshInterval: 1h\n  secretStoreRef:\n    name: aws-secrets-manager\n    kind: ClusterSecretStore\n  target:\n    name: hello-login-secrets\n  data:\n    - secretKey: DATABASE_URL\n      remoteRef:\n        key: hello-login/production\n        property: DATABASE_URL\n    - secretKey: JWT_SECRET\n      remoteRef:\n        key: hello-login/production\n        property: JWT_SECRET\n    - secretKey: MAIL_PASSWORD\n      remoteRef:\n        key: hello-login/production\n        property: MAIL_PASSWORD\n    - secretKey: MAIL_USERNAME\n      remoteRef:\n        key: hello-login/production\n        property: MAIL_USERNAME\n    - secretKey: MAIL_DEFAULT_SENDER\n      remoteRef:\n        key: hello-login/production\n        property: MAIL_DEFAULT_SENDER\n' > k8s/base/external-secret-production.yaml
-```
-
-```
-kubectl apply -f k8s/base/external-secret-production.yaml -n hello-login-production
-```
-
-Verify:
-
-```
-kubectl get secret hello-login-secrets -n hello-login-staging
-```
-
-```
-kubectl get secret hello-login-secrets -n hello-login-production
-```
-
-Expected: both secrets exist with the correct keys.
-
----
-
-### Phase 2 — Kubernetes Manifests (PR-64, PR-65)
-
-Apply base manifests and environment overlays:
-
-```bash
-kubectl apply -k k8s/overlays/staging
-kubectl rollout status deployment/backend -n hello-login-staging
-kubectl rollout status deployment/frontend -n hello-login-staging
-```
-
----
-
-### Phase 3 — CI/CD (PR-66)
-
-#### Prerequisites
-
-Before the deploy job can run, complete the following setup once:
-
-**1. Create the GitHub Actions IAM role** — see PR-66 Step 1 for full commands. In summary:
-- Register the GitHub Actions OIDC provider in your AWS account
-- Create `GitHubActionsDeployRole` with trust policy scoped to `repo:gxozer/datatools:ref:refs/heads/master`
-- Attach `AmazonEC2ContainerRegistryPowerUser` and `EKSDeployPolicy`
-
-**2. Add GitHub secrets** at `github.com/gxozer/datatools/settings/secrets/actions`:
-- `AWS_DEPLOY_ROLE_ARN` — ARN of the role created above
-- `ECR_BACKEND` — `277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend`
-- `ECR_FRONTEND` — `277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend`
-
-**3. Grant the role EKS access** — add to the `aws-auth` ConfigMap:
-
-```
-kubectl edit configmap aws-auth -n kube-system
-```
-
-Add under `mapRoles`:
-
-```yaml
-- rolearn: arn:aws:iam::277070500859:role/GitHubActionsDeployRole
-  username: github-actions
-  groups:
-    - system:masters
-```
-
----
-
-#### Automatic deploy (on merge to master)
-
-On merge to `master`, GitHub Actions automatically:
-1. Runs all tests (unit, integration, container, E2E)
-2. Builds and pushes images to ECR tagged with the Git SHA
-3. Applies the staging overlay with the new image tags
-4. Waits for rollout to complete
-
-#### Manual deploy (for testing)
-
-The workflow supports manual triggers. To deploy without pushing to master:
-
-1. Go to **GitHub → Actions → hello-login CI**
-2. Click **Run workflow**
-3. Select branch and click **Run workflow**
-
-This runs all test jobs (unit, integration, container, E2E) but NOT the deploy job — the deploy step only runs on a push to `master`. Use this to verify tests pass before merging.
+The ALB address in the ingress output is the public URL. It takes 2–3 minutes to become active after first deploy.
 
 ---
 
 ### Teardown (cost saving)
 
-The easiest way to tear down is via the GitHub Actions workflow:
+**Always delete Kubernetes resources first** — the ALB controller must remove the Application Load Balancer before Terraform can delete the VPC. If you skip this step the VPC deletion will fail.
 
-1. Go to **Actions → hello-login Teardown → Run workflow**
-2. Check the boxes for what you want to stop:
-   - **Stop RDS** (default: on) — saves ~$14/month, reversible (RDS can be restarted)
-   - **Delete EKS cluster** (default: off) — saves ~$88/month, irreversible (must re-provision from Phase 1)
-3. Click **Run workflow**
+```bash
+# Step 1 — remove all k8s resources (deletes the ALB)
+kubectl delete -k k8s/overlays/staging/
 
-ECR images are always retained. To restart RDS after stopping it:
+# Wait ~60 seconds for the ALB to be fully removed, then:
 
+# Step 2 — destroy all AWS infrastructure
+terraform -chdir=terraform destroy -var-file=staging.tfvars
 ```
-aws rds start-db-instance --db-instance-identifier hello-login --region us-west-2
-```
-
-**Manual teardown (if pipeline is unavailable):**
-
-Stop RDS (~$14/month):
-
-```
-aws rds stop-db-instance --db-instance-identifier hello-login --region us-west-2
-```
-
-Delete EKS cluster (~$88/month) — delete Ingress resources first so the ALB Controller removes any provisioned ALBs before the VPC is torn down:
-
-```
-aws eks update-kubeconfig --name hello-login --region us-west-2
-kubectl delete ingress --all -n hello-login-staging --ignore-not-found
-kubectl delete ingress --all -n hello-login-production --ignore-not-found
-sleep 30
-eksctl delete cluster --name hello-login --region us-west-2
-```
-
-To restore after cluster deletion, re-run from Phase 1.
 
 ---
 
-### Full AWS cleanup (permanent removal)
+### Terraform CI
 
-Run these steps in order to remove every AWS resource created by this project. This is irreversible.
+Four checks run automatically on every pull request that touches `terraform/**`:
 
-**Step 1 — Delete Ingress and cluster**
+| Check | Tool | What it does |
+|-------|------|-------------|
+| Validate | `terraform validate` | Syntax and schema |
+| Lint | tflint | Style and deprecated patterns |
+| Security | checkov | CIS benchmark compliance |
+| Unit tests | `terraform test` | Mock-based module tests |
 
-Deletes the EKS control plane, nodes, NAT gateway, VPC, EKS OIDC provider, and the IRSA IAM roles for the ALB controller and ESO (eksctl handles all of these automatically).
+Pipeline: `.github/workflows/terraform-ci.yml`
 
-```
-aws eks update-kubeconfig --name hello-login --region us-west-2
-kubectl delete ingress --all -n hello-login-staging --ignore-not-found
-kubectl delete ingress --all -n hello-login-production --ignore-not-found
-sleep 30
-eksctl delete cluster --name hello-login --region us-west-2
-```
+---
 
-**Step 2 — Delete RDS instance**
+### Terratest integration tests
 
-```
-aws rds delete-db-instance --db-instance-identifier hello-login --skip-final-snapshot --region us-west-2
-aws rds wait db-instance-deleted --db-instance-identifier hello-login --region us-west-2
-```
+Terratest provisions **real** AWS infrastructure, asserts on it, then destroys it. Run manually — each run costs ~$5–10 and takes ~30 minutes.
 
-**Step 3 — Delete RDS subnet group and security group**
-
-```
-aws rds delete-db-subnet-group --db-subnet-group-name hello-login-db-subnet --region us-west-2
-aws ec2 delete-security-group --group-name hello-login-rds-sg --region us-west-2
+```bash
+# Prerequisites: Go 1.21+, AWS credentials, staging environment destroyed
+cd terraform/test
+go mod tidy          # first time only
+go test -v -timeout 60m -run TestTerraformIntegration
 ```
 
-**Step 4 — Delete Secrets Manager secrets**
+The test creates a randomly-named workspace (`tt<id>`), applies the full stack, runs one assertion sub-test per module (networking, ECR, RDS, EKS, secrets), then destroys everything on exit.
 
-```
-aws secretsmanager delete-secret --secret-id hello-login/staging --force-delete-without-recovery --region us-west-2
-aws secretsmanager delete-secret --secret-id hello-login/production --force-delete-without-recovery --region us-west-2
-```
+**Constraint:** Destroy the staging environment first — the GitHub OIDC provider is a global IAM resource (one per AWS account).
 
-**Step 5 — Delete ECR repositories**
+GitHub Actions workflow (manual trigger): `.github/workflows/terratest.yml`
+Requires GitHub secret: `TERRATEST_AWS_ROLE_ARN`
 
-```
-aws ecr delete-repository --repository-name hello-login-backend --force --region us-west-2
-aws ecr delete-repository --repository-name hello-login-frontend --force --region us-west-2
-```
+---
 
-**Step 6 — Delete IAM roles and policies**
+### Full reference
 
-The IRSA roles for the ALB controller and ESO are deleted automatically by eksctl in Step 1. Only the GitHub Actions deploy role and the managed policies need manual cleanup:
-
-```
-aws iam delete-role-policy --role-name GitHubActionsDeployRole --policy-name EKSDeployAccess
-aws iam delete-role-policy --role-name GitHubActionsDeployRole --policy-name TeardownAccess
-aws iam delete-role-policy --role-name GitHubActionsDeployRole --policy-name EKSDeployAccess
-aws iam detach-role-policy --role-name GitHubActionsDeployRole --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
-aws iam detach-role-policy --role-name GitHubActionsDeployRole --policy-arn arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
-aws iam delete-role --role-name GitHubActionsDeployRole
-aws iam delete-policy --policy-arn arn:aws:iam::277070500859:policy/AWSLoadBalancerControllerIAMPolicy
-aws iam delete-policy --policy-arn arn:aws:iam::277070500859:policy/ESOSecretsManagerPolicy
-```
-
-**Step 7 — Delete GitHub Actions OIDC provider**
-
-The EKS cluster OIDC provider is deleted automatically by eksctl in Step 1. The GitHub Actions OIDC provider is separate and must be deleted manually:
-
-```
-aws iam delete-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::277070500859:oidc-provider/token.actions.githubusercontent.com
-```
-
-**Step 8 — Remove GitHub repository secrets**
-
-```
-gh secret delete AWS_DEPLOY_ROLE_ARN --repo gxozer/datatools
-gh secret delete ECR_BACKEND --repo gxozer/datatools
-gh secret delete ECR_FRONTEND --repo gxozer/datatools
-```
+See [docs/GUIDE_terraform_iac.md](docs/GUIDE_terraform_iac.md) for:
+- Explanation of every Terraform file and resource
+- How the dependency graph and parallel execution work
+- Common commands and troubleshooting
 
 ---
 
@@ -1102,13 +807,56 @@ hello_login_deploy/
 │       ├── backend.yaml
 │       ├── frontend.yaml
 │       └── verify_setup.sh
-├── docker-compose.yml        # Wires backend + frontend for one-command startup
+│
+│   # Two separate Terraform roots — kept apart because they manage completely
+│   # different infrastructure with different lifecycles and no shared state:
+│   #
+│   #   terraform/   — EKS stack (staging + production). Full cloud setup:
+│   #                  VPC, EKS, RDS, ECR, IAM, ALB, Secrets Manager.
+│   #                  Long-lived; uses workspaces for staging vs production.
+│   #
+│   #   infra/dev/   — Dev EC2 stack (single instance + Docker Compose).
+│   #                  Throwaway; destroyed when not in use to save cost.
+│   #                  Mixing them would couple dev teardown to prod infrastructure.
+│
+├── terraform/
+│   ├── modules/              # networking, eks, rds, ecr, iam, secrets, helm-addons
+│   ├── test/                 # Terratest integration tests (Go)
+│   │   ├── go.mod
+│   │   ├── integration_test.go   # apply → assert all modules → destroy
+│   │   ├── networking_test.go
+│   │   ├── ecr_test.go
+│   │   ├── rds_test.go
+│   │   ├── eks_test.go
+│   │   └── secrets_test.go
+│   ├── tests/                # terraform test mock-based unit tests
+│   ├── staging.tfvars
+│   └── production.tfvars
+├── infra/
+│   └── dev/                  # Terraform for dev EC2 (single instance, throwaway)
+│       ├── main.tf           # EC2 instance, security group, EIP, IAM role
+│       ├── variables.tf
+│       ├── outputs.tf
+│       ├── versions.tf
+│       └── dev.tfvars.example
+├── k8s/
+│   ├── base/                 # Shared Kubernetes manifests
+│   └── overlays/
+│       ├── staging/          # EKS staging (ECR images, ESO secrets, ALB ingress)
+│       ├── production/       # EKS production
+│       └── dev/              # k3s on dev EC2 (MySQL pod, Traefik ingress, .env.dev secrets)
+├── docker-compose.yml        # Local development (builds from source)
 ├── docker-compose.override.yml  # Debug overlay: exposes remote-pdb on port 4444
-├── Makefile                  # Build, test, and compose targets
+├── docker-compose.ec2.yml    # Dev EC2 deployment (pulls from ECR, Caddy TLS)
+├── Caddyfile                 # Caddy reverse proxy config (HTTPS via Let's Encrypt)
+├── .env.ec2.example          # Secret template for dev EC2 deployment
+├── Makefile                  # Build, test, compose, and dev EC2 targets
 ├── pytest.ini                # Pytest configuration
 ├── TESTING.md                # Full testing instructions
 └── README.md                 # This file
 
-# CI pipeline lives at the repo root (not inside this directory):
-# .github/workflows/hello-login-ci.yml
+# CI pipelines live at the repo root (not inside this directory):
+# .github/workflows/hello-login-ci.yml   — app CI (every push/PR)
+# .github/workflows/terraform-ci.yml     — terraform checks (every PR touching terraform/)
+# .github/workflows/terratest.yml        — Terratest integration (manual only)
 ```

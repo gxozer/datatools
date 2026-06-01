@@ -34,3 +34,22 @@ test-results/
 
 # OS
 .DS_Store
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfplan
+terraform/.terraform.lock.hcl
+
+# Dev infrastructure (infra/dev/)
+infra/dev/.terraform/
+infra/dev/*.tfstate
+infra/dev/*.tfstate.*
+infra/dev/*.tfplan
+infra/dev/.terraform.lock.hcl
+infra/dev/dev.tfvars
+
+# Dev secrets
+.env.ec2
+k8s/overlays/dev/.env.dev

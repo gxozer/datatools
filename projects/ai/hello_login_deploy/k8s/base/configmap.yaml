@@ -1,15 +1,67 @@
+# configmap.yaml
+#
+# A ConfigMap stores non-sensitive configuration as key/value pairs.
+# Pods inject these values as environment variables via envFrom.configMapRef.
+#
+# Rule of thumb — ConfigMap vs Secret:
+#   ConfigMap  — anything that is not sensitive (URLs, ports, feature flags)
+#   Secret     — anything sensitive (passwords, API keys, connection strings with credentials)
+#
+# The values here are BASE defaults shared by all environments.
+# Each overlay (staging/production) can override individual keys via configmap-patch.yaml.
+#
+# Acronyms:
+#   CORS  — Cross-Origin Resource Sharing — a browser security mechanism that controls
+#           which domains are allowed to make API requests to this server
+#   TLS   — Transport Layer Security — the encryption protocol used for HTTPS
+#   SMTP  — Simple Mail Transfer Protocol — the standard protocol for sending email
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: hello-login-config
+  name: hello-login-config   # referenced by name in backend-deployment.yaml envFrom
+
 data:
+  # FLASK_DEBUG — enables Flask's debug mode (auto-reload, detailed error pages).
+  # Always "false" in deployed environments — debug mode exposes sensitive information.
   FLASK_DEBUG: "false"
+
+  # PORT — the port the Flask application listens on inside the container.
+  # Must match containerPort and Service port in services.yaml.
   PORT: "5001"
+
+  # FRONTEND_URL — the public URL of the frontend application.
+  # Used by the backend to generate links in emails (e.g. password reset links).
+  # Overridden per environment in configmap-patch.yaml.
   FRONTEND_URL: "https://placeholder.example.com"
+
+  # CORS_ORIGINS — the list of origins (domains) the browser is allowed to send
+  # API requests from. The backend checks the request's Origin header against this list.
+  # If the domain doesn't match, the browser blocks the response (CORS policy).
+  # Must match the actual frontend URL — overridden per environment in configmap-patch.yaml.
   CORS_ORIGINS: "https://placeholder.example.com"
+
+  # MAIL_SERVER — the SMTP server hostname used to send transactional emails
+  # (e.g. email verification, password reset).
   MAIL_SERVER: "smtp-relay.brevo.com"
+
+  # MAIL_PORT — the SMTP port. 587 is the standard port for SMTP with STARTTLS
+  # (a command that upgrades a plain connection to TLS — encrypted email delivery).
   MAIL_PORT: "587"
+
+  # MAIL_USE_TLS — whether to encrypt email traffic using TLS.
+  # Always "true" — sending credentials over unencrypted SMTP would be a security risk.
   MAIL_USE_TLS: "true"
+
+  # MAIL_SUPPRESS_SEND — when "1", the Flask-Mail library skips actually sending emails.
+  # Useful in local development so test accounts don't receive real emails.
+  # "0" means emails ARE sent (normal behaviour for deployed environments).
   MAIL_SUPPRESS_SEND: "0"
+
+  # MAX_LOGIN_ATTEMPTS — number of failed login attempts before an account is locked.
+  # Protects against brute-force password attacks.
   MAX_LOGIN_ATTEMPTS: "5"
+
+  # LOCKOUT_WINDOW_MINUTES — how long (in minutes) a locked account stays locked.
+  # After this window, the failed attempt counter resets and the user can try again.
   LOCKOUT_WINDOW_MINUTES: "15"

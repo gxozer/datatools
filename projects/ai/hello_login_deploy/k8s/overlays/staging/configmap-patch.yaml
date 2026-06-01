@@ -1,7 +1,33 @@
+# configmap-patch.yaml  (staging)
+#
+# A strategic merge patch that overrides specific keys in the base ConfigMap.
+# Kustomize merges this with base/configmap.yaml — only the keys listed here
+# are changed; all other keys from the base are preserved unchanged.
+#
+# Why patch instead of replacing the whole ConfigMap?
+# The base ConfigMap has many keys (FLASK_DEBUG, PORT, MAIL_SERVER, etc.) that
+# are the same in every environment. Only the URL-based keys differ. Patching
+# avoids duplicating all the shared keys in every overlay.
+#
+# Acronyms:
+#   CORS  — Cross-Origin Resource Sharing (browser security mechanism controlling
+#           which domains can make API requests to this backend)
+#   URL   — Uniform Resource Locator (web address)
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  # Must match the name in base/configmap.yaml exactly — this is how Kustomize
+  # knows which resource to apply the patch to.
   name: hello-login-config
+
 data:
-  FRONTEND_URL: "http://staging.hello-login.example.com"
-  CORS_ORIGINS: "http://staging.hello-login.example.com"
+  # FRONTEND_URL — overrides the placeholder in the base.
+  # The backend uses this URL to build links in emails (e.g. password reset links).
+  # Must be the real public URL of the staging frontend.
+  FRONTEND_URL: "https://staging.gokhanozer.com"
+
+  # CORS_ORIGINS — overrides the placeholder in the base.
+  # The backend allows browser requests from this origin only.
+  # Must match FRONTEND_URL so the staging frontend can call the staging API.
+  CORS_ORIGINS: "https://staging.gokhanozer.com"

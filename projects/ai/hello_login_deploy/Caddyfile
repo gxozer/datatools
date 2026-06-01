@@ -1,0 +1,12 @@
+# Caddyfile — TLS termination for the dev EC2 environment.
+# DEV_DOMAIN is set in .env.ec2 and passed to the Caddy container via environment:.
+# Caddy automatically obtains and renews a Let's Encrypt certificate for this domain.
+#
+# Prerequisites:
+#   - An A record pointing DEV_DOMAIN to the EC2 Elastic IP (from terraform output public_ip)
+#   - Port 80 and 443 open (already done in infra/dev/main.tf)
+
+{$DEV_DOMAIN} {
+    reverse_proxy /api/* backend:5001
+    reverse_proxy * frontend:8080
+}
