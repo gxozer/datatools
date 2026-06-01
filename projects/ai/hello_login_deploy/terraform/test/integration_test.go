@@ -16,12 +16,17 @@
 //   - Go 1.21+ installed
 //   - Run `go mod tidy` once to download dependencies
 //
-// Constraint — GitHub OIDC provider:
-//   The IAM module creates an account-wide GitHub OIDC provider
-//   (token.actions.githubusercontent.com). Only one can exist per AWS account.
-//   If the staging environment is currently running, destroy it first:
-//     terraform destroy -var-file=staging.tfvars
-//   Otherwise this test will fail on the OIDC provider creation step.
+// Account-global singletons — staging must be applied before running this test:
+//
+//   ECR repositories (hello-login-backend / hello-login-frontend):
+//     These repos are account-global and owned by the staging state.
+//     This test sets ecr_create_repos = false and reads them via data sources.
+//     Ensure they exist first: aws ecr describe-repositories \
+//       --repository-names hello-login-backend hello-login-frontend
+//
+//   GitHub OIDC provider (token.actions.githubusercontent.com):
+//     One per AWS account. This test sets create_github_oidc_provider = false
+//     so it does not attempt to re-create the provider staging already owns.
 
 package test
 
@@ -59,6 +64,9 @@ func TestTerraformIntegration(t *testing.T) {
 			"rds_prevent_destroy": false,
 			"github_org":          "gxozer",
 			"github_repo":         "hello_login_deploy",
+			// Account-global singletons: staging owns these; this test reads them, not creates them.
+			"ecr_create_repos":             false,
+			"create_github_oidc_provider":  false,
 		},
 		NoColor: true,
 	})

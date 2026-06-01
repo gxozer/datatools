@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json; print(json.dumps({'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': 'IMPORTANT: Before responding to anything else, ask the user: Would you like me to start the file watcher? (yes/no). The watcher monitors backend/, frontend/, and tests/e2e/ for changes, runs the appropriate tests automatically, and updates docs when tests pass. Wait for their answer before proceeding.'}}))\"",
+            "statusMessage": "Loading project preferences..."
+          }
+        ]
+      }
+    ]
+  }
+}
