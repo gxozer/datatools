@@ -15,16 +15,16 @@ services:
       retries: 10
       start_period: 20s
 
-  backend:
-    build: ./backend
-    image: hello-login-backend
+  login-service:
+    build: ./login-service
+    image: hello-login-login
     depends_on:
       mysql:
         condition: service_healthy
     ports:
       - "5001:5001"
     env_file:
-      - path: ./backend/.env
+      - path: ./login-service/.env
         required: false
     environment:
       - FLASK_DEBUG=false
@@ -34,15 +34,27 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
       - MAX_LOGIN_ATTEMPTS=${MAX_LOGIN_ATTEMPTS:-5}
       - LOCKOUT_WINDOW_MINUTES=${LOCKOUT_WINDOW_MINUTES:-15}
+
+  hello-service:
+    build: ./hello-service
+    image: hello-login-hello
+    ports:
+      - "5002:5002"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-dev-only-secret-change-for-production-32c}
+      - PORT=5002
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+
   frontend:
     build: ./frontend
     image: hello-login-frontend
     ports:
       - "3000:8080"
     environment:
-      - BACKEND_HOST=backend
+      - BACKEND_HOST=login-service
+      - HELLO_BACKEND_HOST=hello-service
     depends_on:
-      - backend
+      - login-service
 
 volumes:
   mysql_data:

@@ -31,13 +31,18 @@ resources:
 # "newName" is the full ECR registry URL.
 # "newTag" is the Docker image tag to deploy.
 images:
-  - name: backend
+  - name: login
     # 277070500859 — AWS account ID
     # dkr.ecr.us-west-2.amazonaws.com — the ECR registry endpoint for us-west-2
-    # hello-login-backend — the ECR repository name
-    newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend
+    # hello-login-login — the ECR repository name for the login/auth service
+    newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-login
     # "latest" — always deploy the most recently pushed image.
     # Used for staging where fast iteration matters more than pinning a specific version.
+    newTag: latest
+
+  - name: hello-login-hello
+    # hello-login-hello — the ECR repository name for the stateless hello-service
+    newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-hello
     newTag: latest
 
   - name: frontend

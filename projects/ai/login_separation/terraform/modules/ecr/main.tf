@@ -1,7 +1,8 @@
 # modules/ecr/main.tf
 #
-# Creates two private Docker image registries in ECR (Elastic Container Registry):
-#   - hello-login-backend
+# Creates three private Docker image registries in ECR (Elastic Container Registry):
+#   - hello-login-login    (auth/login service, renamed from hello-login-backend)
+#   - hello-login-hello    (stateless hello-service)
 #   - hello-login-frontend
 #
 # ECR is AWS's private container registry. Images are pulled over the private
@@ -15,7 +16,7 @@
 locals {
   # List of repository names to create. Using a list + for_each means we
   # write the repository configuration once and it applies to both repos.
-  repos = ["hello-login-backend", "hello-login-frontend"]
+  repos = ["hello-login-login", "hello-login-hello", "hello-login-frontend"]
 
   # The lifecycle policy is defined once here and applied to both repositories.
   # jsonencode() converts the HCL map into the JSON string that the ECR API expects.

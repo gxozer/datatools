@@ -208,8 +208,8 @@ data "aws_iam_policy_document" "github_actions" {
     resources = ["*"]
   }
 
-  # ECRPush: push and pull images to/from the two hello-login repos.
-  # Scoped to exactly these two repositories — not the entire ECR registry.
+  # ECRPush: push and pull images to/from the three hello-login repos.
+  # Scoped to exactly these three repositories — not the entire ECR registry.
   statement {
     sid = "ECRPush"
     actions = [
@@ -222,7 +222,8 @@ data "aws_iam_policy_document" "github_actions" {
       "ecr:GetDownloadUrlForLayer",
     ]
     resources = [
-      "arn:aws:ecr:${var.aws_region}:${var.aws_account_id}:repository/hello-login-backend",
+      "arn:aws:ecr:${var.aws_region}:${var.aws_account_id}:repository/hello-login-login",
+      "arn:aws:ecr:${var.aws_region}:${var.aws_account_id}:repository/hello-login-hello",
       "arn:aws:ecr:${var.aws_region}:${var.aws_account_id}:repository/hello-login-frontend",
     ]
   }

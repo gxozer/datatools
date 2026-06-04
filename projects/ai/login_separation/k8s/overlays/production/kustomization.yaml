@@ -28,14 +28,18 @@ resources:
 
 # images — replace placeholder image names with full ECR URLs.
 images:
-  - name: backend
-    newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend
+  - name: login
+    newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-login
     # REPLACE_WITH_SHA — this placeholder is replaced by the CI/CD pipeline
     # with the actual git commit SHA of the code being deployed, e.g. "sha-abc1234".
     # Using a SHA instead of "latest" means:
     #   - The exact deployed version is always known and traceable
     #   - A rollback just means deploying a previous SHA
     #   - Production is never accidentally updated by a new push to a branch
+    newTag: REPLACE_WITH_SHA
+
+  - name: hello-login-hello
+    newName: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-hello
     newTag: REPLACE_WITH_SHA
 
   - name: frontend

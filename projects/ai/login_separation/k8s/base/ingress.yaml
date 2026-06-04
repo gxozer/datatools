@@ -21,7 +21,7 @@
 #   ACM   — AWS Certificate Manager — issues and manages TLS certificates
 #   IP    — Internet Protocol address
 
-# ── Backend Ingress ───────────────────────────────────────────────────────────
+# ── Login Service Ingress ─────────────────────────────────────────────────────
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -75,11 +75,19 @@ spec:
   rules:
     - http:
         paths:
-          - path: /api          # route any request starting with /api to the backend Service
+          - path: /api/hello    # route exact /api/hello to the stateless hello-service
+            pathType: Exact
+            backend:
+              service:
+                name: hello     # forward to the hello Service defined in services.yaml
+                port:
+                  number: 5002
+
+          - path: /api          # route any other /api request to the login-service
             pathType: Prefix    # Prefix means /api, /api/login, /api/health all match
             backend:
               service:
-                name: backend   # forward to the backend Service defined in services.yaml
+                name: login     # forward to the login Service defined in services.yaml
                 port:
                   number: 5001
 

@@ -1,4 +1,4 @@
-# backend-deployment.yaml
+# login-deployment.yaml (renamed from backend-deployment.yaml)
 #
 # A Deployment is a Kubernetes resource that manages a set of identical pods
 # (running containers). It ensures the desired number of pods are always running,
@@ -12,7 +12,7 @@
 apiVersion: apps/v1   # the Kubernetes API group and version for Deployments
 kind: Deployment      # the type of resource being defined
 metadata:
-  name: backend       # the name of this Deployment; used by Services and HPA to reference it
+  name: login       # the name of this Deployment; used by Services and HPA to reference it
 
 spec:
   # replicas — how many identical pod copies to run simultaneously.
@@ -24,7 +24,7 @@ spec:
   # It finds pods by matching their labels. Must match template.metadata.labels below.
   selector:
     matchLabels:
-      app: backend    # only manage pods that have the label app=backend
+      app: login    # only manage pods that have the label app=login
 
   # strategy — how to roll out new versions of the pod (e.g. after a new image is pushed).
   strategy:
@@ -39,7 +39,7 @@ spec:
   template:
     metadata:
       labels:
-        app: backend    # every pod gets this label; must match selector.matchLabels above
+        app: login    # every pod gets this label; must match selector.matchLabels above
 
     spec:
       # securityContext — security settings applied to every container in the pod.
@@ -50,7 +50,7 @@ spec:
 
       # topologySpreadConstraints — spread pods across failure domains (AZs — Availability Zones).
       # Without this, Kubernetes might place both pods on nodes in the same AZ,
-      # meaning an AZ outage would take down the entire backend.
+      # meaning an AZ outage would take down the entire login.
       topologySpreadConstraints:
         - maxSkew: 1                            # allow at most 1 more pod in one AZ than another
           topologyKey: topology.kubernetes.io/zone  # spread across AZs (zones)
@@ -58,14 +58,14 @@ spec:
                                                 # (don't block the pod from starting)
           labelSelector:
             matchLabels:
-              app: backend                      # apply this constraint to backend pods only
+              app: login                      # apply this constraint to login pods only
 
       # initContainers — containers that run to completion BEFORE the main container starts.
       # Used here to run database migrations. If migrations fail, the pod does not start,
       # preventing the app from running against a stale or broken schema.
       initContainers:
         - name: migrate
-          image: backend          # same image as the main container (overridden by Kustomize)
+          image: login          # same image as the main container (overridden by Kustomize)
           command: ["python", "-m", "alembic", "upgrade", "head"]
           # alembic — the Python database migration tool
           # upgrade head — apply all pending migrations to bring the schema up to date
@@ -77,8 +77,8 @@ spec:
 
       # containers — the main application containers that run for the lifetime of the pod.
       containers:
-        - name: backend
-          image: backend          # placeholder name; Kustomize replaces this with the full ECR URL
+        - name: login
+          image: login          # placeholder name; Kustomize replaces this with the full ECR URL
           command: ["python", "run.py"]   # starts the Flask API server
 
           ports:

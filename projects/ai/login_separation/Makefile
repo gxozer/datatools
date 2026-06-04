@@ -1,4 +1,4 @@
-.PHONY: test-containers test-backend test-frontend build-backend build-frontend test-backend-unit compose-up compose-down test-e2e-docker \
+.PHONY: test-containers test-backend test-frontend build-backend build-frontend build-hello test-backend-unit test-hello-unit compose-up compose-down test-e2e-docker \
         dev-init dev-ssh dev-deploy dev-logs dev-down dev-k8s-apply
 
 # ── Dev EC2 environment ───────────────────────────────────────────────────────
@@ -45,13 +45,16 @@ dev-k8s-apply:
 test-containers: test-backend test-frontend
 
 build-backend:
-	docker build -t hello-login-backend ./backend
+	docker build -t hello-login-login ./login-service
+
+build-hello:
+	docker build -t hello-login-hello ./hello-service
 
 build-frontend:
 	docker build -t hello-login-frontend ./frontend
 
 test-backend: build-backend
-	container-structure-test test --image hello-login-backend --config tests/container/backend.yaml
+	container-structure-test test --image hello-login-login --config tests/container/backend.yaml
 
 test-backend-unit: build-backend
 	docker run --rm \
@@ -59,8 +62,15 @@ test-backend-unit: build-backend
 		-e TESTING=true \
 		-v $(CURDIR)/tests:/app/tests \
 		-v $(CURDIR)/pytest.ini:/app/pytest.ini \
-		hello-login-backend \
+		hello-login-login \
 		sh -c "pip install -q pytest pytest-cov && PYTHONPATH=/app pytest tests/unit tests/integration --tb=short -q"
+
+test-hello-unit: build-hello
+	docker run --rm \
+		-e JWT_SECRET=test-secret \
+		-e TESTING=true \
+		hello-login-hello \
+		pytest tests/unit tests/integration --tb=short -q
 
 test-frontend: build-frontend
 	container-structure-test test --image hello-login-frontend --config tests/container/frontend.yaml

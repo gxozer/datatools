@@ -22,10 +22,11 @@ kind: Kustomization
 # Overlays can add more resources on top of this list.
 resources:
   - configmap.yaml           # non-sensitive app configuration (ports, URLs, mail settings)
-  - backend-deployment.yaml  # Flask API server — 2 replicas, rolling updates, migrations
+  - login-deployment.yaml    # Login/auth Flask API server — 2 replicas, rolling updates, migrations
+  - hello-deployment.yaml    # Stateless hello-service — 2 replicas, no DB, no migrations
   - frontend-deployment.yaml # React/nginx static file server — 2 replicas
   - services.yaml            # ClusterIP Services giving stable DNS names to the pods
-  - ingress.yaml             # ALB routing rules: /api/* → backend, / → frontend
+  - ingress.yaml             # ALB routing rules: /api/hello → hello, /api/* → login, / → frontend
   - hpa.yaml                 # HorizontalPodAutoscalers — auto-scale on CPU > 70%
   - cluster-secret-store.yaml  # ESO ClusterSecretStore — tells ESO how to reach AWS Secrets Manager
   - github-actions-rbac.yaml   # RBAC rules granting GitHub Actions CI/CD deploy permissions

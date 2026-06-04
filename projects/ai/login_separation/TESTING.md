@@ -1,6 +1,6 @@
 # Testing
 
-This project has three test suites: backend unit tests, backend integration tests, and end-to-end UI tests.
+This project has four test suites: login-service unit tests, login-service integration tests, hello-service tests, and end-to-end UI tests.
 
 ---
 
@@ -9,50 +9,64 @@ This project has three test suites: backend unit tests, backend integration test
 - Python 3.11+
 - Node.js 18+
 - Virtual environment set up (see [README.md](README.md))
-- Database initialised: `cd hello_login/backend && .venv/bin/python -m alembic upgrade head`
+- Database initialised: `alembic -c login-service/alembic.ini upgrade head`
 
 ---
 
-## Backend Unit Tests
+## login-service Unit Tests
 
 Tests controller methods directly without going through the HTTP stack.
 
 ```bash
-cd hello_login
-backend/.venv/bin/python -m pytest tests/unit/ -v
+.venv/bin/pytest tests/unit/ -v
 ```
 
-Expected output: **~60 passed**
+Expected output: **110 passed**
 
 ---
 
-## Backend Integration Tests
+## login-service Integration Tests
 
 Tests the full Flask request/response stack using Flask's test client. No live server required.
 
 ```bash
-cd hello_login
-backend/.venv/bin/python -m pytest tests/integration/ -v
+.venv/bin/pytest tests/integration/ -v
 ```
 
-Expected output: **~76 passed**
+Expected output: **47 passed**
 
 ---
 
-## Run All Backend Tests
+## Run All login-service Tests
 
 ```bash
-cd hello_login
-backend/.venv/bin/python -m pytest tests/unit/ tests/integration/ -v
+.venv/bin/pytest tests/unit/ tests/integration/ -v
 ```
 
-Expected output: **~136 passed**
+Expected output: **157 passed**
 
 ### With coverage report
 
 ```bash
-cd hello_login
-backend/.venv/bin/python -m pytest tests/unit/ tests/integration/ --cov=app --cov-report=term-missing
+.venv/bin/pytest tests/unit/ tests/integration/ --cov=app --cov-report=term-missing
+```
+
+---
+
+## hello-service Tests
+
+hello-service has its own test suite (no database required).
+
+```bash
+.venv/bin/pytest hello-service/tests/ -v
+```
+
+Expected output: **22 passed**
+
+### With coverage
+
+```bash
+.venv/bin/pytest hello-service/tests/ --cov=app --cov-report=term-missing
 ```
 
 ---
@@ -91,7 +105,7 @@ Starts the Flask backend and Vite dev server, then drives a real Chromium browse
 Install the Playwright browser (one-time):
 
 ```bash
-cd hello_login
+
 backend/.venv/bin/playwright install chromium
 ```
 
@@ -105,8 +119,8 @@ cd hello_login/backend
 ### Run E2E tests
 
 ```bash
-cd hello_login
-backend/.venv/bin/python -m pytest tests/e2e/ -v
+
+.venv/bin/pytest tests/e2e/ -v
 ```
 
 > **Note:** E2E tests start Flask on port **5002** and Vite on port **5175**. Make sure those ports are free before running.
@@ -119,8 +133,8 @@ Expected output: **6 passed**
 
 ```bash
 # Backend (unit + integration + E2E)
-cd hello_login
-backend/.venv/bin/python -m pytest -v
+
+.venv/bin/pytest -v
 
 # Frontend
 cd hello_login/frontend && npm test

@@ -65,3 +65,7 @@ data:
   # LOCKOUT_WINDOW_MINUTES — how long (in minutes) a locked account stays locked.
   # After this window, the failed attempt counter resets and the user can try again.
   LOCKOUT_WINDOW_MINUTES: "15"
+
+  # HELLO_BACKEND_HOST — the internal DNS name of the hello-service.
+  # Used by the nginx frontend to proxy /api/hello requests to the correct service.
+  HELLO_BACKEND_HOST: "hello"

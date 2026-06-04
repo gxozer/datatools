@@ -7,9 +7,9 @@
 # Then connect: nc localhost 4444
 
 services:
-  backend:
+  login-service:
     build:
-      context: ./backend
+      context: ./login-service
       target: debug
     ports:
       - "4444:4444"

@@ -2,7 +2,7 @@
 
 A full-stack web application with JWT authentication. Users log in to receive a personalised greeting fetched from a protected REST API.
 
-**Stack:** Python + Flask (backend) · TypeScript + React (frontend)
+**Stack:** Python + Flask (two microservices) · TypeScript + React (frontend)
 
 ---
 
@@ -11,23 +11,24 @@ A full-stack web application with JWT authentication. Users log in to receive a 
 ```
 Browser (React/Vite)
         │
-        │  POST /api/login  →  JWT token
-        │
-        │  GET /api/hello
-        │  Authorization: Bearer <token>
         ▼
-Flask Backend
+nginx:8080 (frontend)
+        ├── /api/hello  ──────────────────► hello-service:5002
+        │                                        │ JWT validated locally
+        │                                        ▼
+        │                               HelloController → Response
         │
-        │  Auth.require_auth validates JWT, checks role
-        │
-        │  JSON: { "message": "Hello, Alice!", "status": "ok" }
-        ▼
-HelloController → Response
+        └── /api/*      ──────────────────► login-service:5001
+                                                 │ Auth, DB, SMTP
+                                                 ▼
+                                        LoginController / SignupController / etc.
 ```
 
+- **login-service** handles all authentication: signup, login, logout, password reset, JWT issuance. Has database (MySQL) and SMTP access.
+- **hello-service** is stateless: validates the JWT locally (no DB) and returns the personalised greeting.
 - The React frontend calls `POST /api/login` to obtain a JWT, stored in `localStorage`
 - `GET /api/hello` requires a valid Bearer token with role `user` or `admin`
-- Flask serves the personalised greeting from `HelloController`
+- nginx routes `/api/hello` to hello-service and all other `/api/*` to login-service
 - In development, Vite proxies `/api/*` requests to `localhost:5001`
 
 ---
@@ -52,7 +53,7 @@ The fastest way to get the full stack running is with Docker Compose.
 
 ```bash
 git clone https://github.com/gxozer/datatools.git
-cd datatools/projects/ai/hello_login_deploy
+cd datatools/projects/ai/login_separation
 ```
 
 ### 2. Start the stack
@@ -62,7 +63,8 @@ docker compose up -d
 ```
 
 This will:
-- Pull/build the Flask backend image (runs Alembic migrations on startup)
+- Pull/build the login-service image (runs Alembic migrations on startup)
+- Pull/build the hello-service image (stateless, no migrations)
 - Pull/build the React/nginx frontend image
 - Start both services and wire them together
 
@@ -80,10 +82,10 @@ docker compose down -v    # also delete the database
 To use a custom JWT secret or enable real email sending, copy the example file and fill in your values:
 
 ```bash
-cp backend/.env.example backend/.env
+cp login-service/.env.example login-service/.env
 ```
 
-Then edit `backend/.env`:
+Then edit `login-service/.env`:
 
 ```bash
 JWT_SECRET=your-32-char-secret-here
@@ -95,7 +97,7 @@ MAIL_PASSWORD=your-brevo-smtp-key
 MAIL_DEFAULT_SENDER=your-brevo-email@example.com
 ```
 
-By default `JWT_SECRET` uses a built-in development value and email sending is suppressed. The `backend/.env` file is optional — the stack starts without it.
+By default `JWT_SECRET` uses a built-in development value and email sending is suppressed. The `login-service/.env` file is optional — the stack starts without it.
 
 ---
 
@@ -105,22 +107,23 @@ By default `JWT_SECRET` uses a built-in development value and email sending is s
 
 ```bash
 git clone https://github.com/gxozer/datatools.git
-cd datatools/projects/ai/beads/hello_login
+cd datatools/projects/ai/login_separation
 ```
 
-### 2. Backend
+### 2. Backend services
 
 ```bash
-cd backend
+# Create a shared venv at the project root
 python3 -m venv .venv
 source .venv/bin/activate       # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r login-service/requirements.txt -r login-service/requirements-dev.txt
+pip install -r hello-service/requirements.txt -r hello-service/requirements-dev.txt
 ```
 
 Copy the example environment file and fill in your values:
 
 ```bash
-cp .env.example .env
+cp login-service/.env.example login-service/.env
 ```
 
 **Email (Brevo):** Password reset emails are sent via [Brevo](https://brevo.com) SMTP. Sign up for a free account (300 emails/day, no expiry), then:
@@ -157,15 +160,24 @@ npm install
 
 ## Running Locally
 
-Open two terminals from the `hello_login/` directory:
+Open three terminals from the project directory:
 
-**Terminal 1 — Backend:**
+**Terminal 1 — login-service:**
 
 ```bash
-cd backend
-source .venv/bin/activate
+cd login-service
+source ../.venv/bin/activate
 python run.py
 # Flask running on http://localhost:5001
+```
+
+**Terminal 2 — hello-service:**
+
+```bash
+cd hello-service
+source ../.venv/bin/activate
+python run.py
+# Flask running on http://localhost:5002
 ```
 
 **Terminal 2 — Frontend:**
@@ -184,7 +196,11 @@ Open [http://localhost:5173](http://localhost:5173) in your browser. The app wil
 
 | Method | Endpoint | Auth | Response |
 |--------|----------|------|----------|
+| POST | `/api/signup` | None | `{"token": "<jwt>", "status": "ok"}` |
 | POST | `/api/login` | None | `{"token": "<jwt>", "status": "ok"}` |
+| POST | `/api/logout` | Bearer JWT | `{"message": "Logged out successfully.", "status": "ok"}` |
+| POST | `/api/password-reset/request` | None | `{"message": "...", "status": "ok"}` |
+| POST | `/api/password-reset/confirm` | None | `{"message": "Password has been reset.", "status": "ok"}` |
 | GET | `/api/hello` | Bearer JWT (role: `user` or `admin`) | `{"message": "Hello, {name}!", "status": "ok"}` |
 | GET | `/api/health` | None | `{"status": "ok"}` |
 
@@ -196,7 +212,7 @@ See [TESTING.md](TESTING.md) for full instructions. Quick start:
 
 ```bash
 # Backend tests (unit + integration)
-backend/.venv/bin/python -m pytest tests/unit/ tests/integration/ -v
+.venv/bin/pytest tests/unit/ tests/integration/ -v
 
 # Frontend tests (also run inside docker build automatically)
 cd frontend && npm test
@@ -226,7 +242,7 @@ bash tests/container/verify_setup.sh
 
 ### CI (GitHub Actions)
 
-All tests run automatically on every push or pull request that touches files under `projects/ai/hello_login_deploy/`. The pipeline is defined in `.github/workflows/hello-login-ci.yml`.
+All tests run automatically on every push or pull request that touches files under `projects/ai/login_separation/`. The pipeline is defined in `.github/workflows/hello-login-ci.yml`.
 
 #### Pipeline jobs
 
@@ -274,8 +290,8 @@ act push --workflows .github/workflows/hello-login-ci.yml
 
 ### Backend — PyCharm
 
-1. Open `backend/` in PyCharm and set the interpreter to `backend/.venv`
-2. Open `run.py`
+1. Open `login-service/` in PyCharm and set the interpreter to `.venv` (project root)
+2. Open `login-service/run.py`
 3. Click in the gutter next to any line to set a breakpoint
 4. Click **🐛 Debug** (or press Shift+F9) to start the server in debug mode
 5. Trigger the endpoint from the browser — PyCharm pauses at your breakpoint with the full debugger UI (variables, call stack, step controls)
@@ -375,6 +391,7 @@ DESCRIBE users;
 SELECT * FROM users;
 SELECT * FROM login_attempts;
 SELECT * FROM password_reset_tokens;
+SELECT * FROM denied_tokens;
 EXIT;
 ```
 
@@ -503,7 +520,8 @@ If you don't have Brevo set up yet, leave `MAIL_SUPPRESS_SEND=1` for now — sig
 First, ensure the ECR repositories exist (they are deleted when the EKS staging environment is torn down):
 
 ```bash
-aws ecr create-repository --repository-name hello-login-backend --region us-west-2
+aws ecr create-repository --repository-name hello-login-login --region us-west-2
+aws ecr create-repository --repository-name hello-login-hello --region us-west-2
 aws ecr create-repository --repository-name hello-login-frontend --region us-west-2
 ```
 
@@ -516,10 +534,15 @@ aws ecr get-login-password --region us-west-2 | \
   277070500859.dkr.ecr.us-west-2.amazonaws.com
 
 # Build for x86_64 (EC2 is amd64, not Apple Silicon arm64)
-docker build --platform linux/amd64 -t hello-login-backend ./backend
-docker tag hello-login-backend:latest \
-  277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:latest
-docker push 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:latest
+docker build --platform linux/amd64 -t hello-login-login ./login-service
+docker tag hello-login-login:latest \
+  277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-login:latest
+docker push 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-login:latest
+
+docker build --platform linux/amd64 -t hello-login-hello ./hello-service
+docker tag hello-login-hello:latest \
+  277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-hello:latest
+docker push 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-hello:latest
 
 docker build --platform linux/amd64 -t hello-login-frontend ./frontend
 docker tag hello-login-frontend:latest \
@@ -607,6 +630,8 @@ Infrastructure is managed with Terraform. Full technical details are in the `doc
 - [docs/TDS_terraform_iac.md](docs/TDS_terraform_iac.md) — technical design and module breakdown
 - [docs/GUIDE_terraform_iac.md](docs/GUIDE_terraform_iac.md) — line-by-line explanation of every Terraform file
 - [docs/TEST_PLAN_terraform_iac.md](docs/TEST_PLAN_terraform_iac.md) — test cases and verification steps
+- [docs/PRD_microservices_separation.md](docs/PRD_microservices_separation.md) — microservices split: login-service + hello-service
+- [docs/TDS_microservices_separation.md](docs/TDS_microservices_separation.md) — technical design for the microservices split
 
 ---
 
@@ -650,10 +675,15 @@ aws ecr get-login-password --region us-west-2 | \
   277070500859.dkr.ecr.us-west-2.amazonaws.com
 
 # Build for x86_64 (EKS nodes run on amd64, not Apple Silicon arm64)
-docker build --platform linux/amd64 -t hello-login-backend ./backend
-docker tag hello-login-backend:latest \
-  277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:latest
-docker push 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:latest
+docker build --platform linux/amd64 -t hello-login-login ./login-service
+docker tag hello-login-login:latest \
+  277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-login:latest
+docker push 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-login:latest
+
+docker build --platform linux/amd64 -t hello-login-hello ./hello-service
+docker tag hello-login-hello:latest \
+  277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-hello:latest
+docker push 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-hello:latest
 
 docker build --platform linux/amd64 -t hello-login-frontend ./frontend
 docker tag hello-login-frontend:latest \
@@ -772,21 +802,36 @@ See [docs/GUIDE_terraform_iac.md](docs/GUIDE_terraform_iac.md) for:
 ## Project Structure
 
 ```
-hello_login_deploy/
-├── backend/
+login_separation/
+├── login-service/            # Auth microservice (port 5001)
 │   ├── app/
 │   │   ├── __init__.py           # Package entry point
-│   │   ├── factory.py            # Flask app factory (create_app)
-│   │   ├── auth.py               # Auth class: generate_token, require_auth
-│   │   ├── auth_controllers.py   # LoginController, SignupController, etc.
-│   │   ├── controllers.py        # HelloController, HealthController
-│   │   ├── models.py             # User, LoginAttempt, PasswordResetToken
+│   │   ├── factory.py            # Flask app factory (DB + mail + CORS)
+│   │   ├── auth.py               # Auth class: generate_token, require_auth (with DB revocation checks)
+│   │   ├── auth_controllers.py   # LoginController, SignupController, LogoutController, PasswordResetController
+│   │   ├── controllers.py        # HealthController
+│   │   ├── models.py             # User, LoginAttempt, DeniedToken, PasswordResetToken
 │   │   └── routes.py             # API Blueprint and URL rules
-│   ├── Dockerfile            # Backend container image
-│   ├── entrypoint.sh         # Runs migrations then starts Flask
+│   ├── Dockerfile            # login-service container image (port 5001)
+│   ├── entrypoint.sh         # Waits for MySQL, runs Alembic migrations, starts Flask
 │   ├── run.py                # Entry point
 │   ├── requirements.txt      # Runtime dependencies
-│   └── requirements-dev.txt  # Dev/test dependencies
+│   ├── requirements-dev.txt  # Dev/test dependencies
+│   └── migrations/           # Alembic DB migrations
+├── hello-service/            # Greeting microservice (port 5002, stateless)
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── auth.py               # Slim JWT validator (signature + expiry only, no DB)
+│   │   ├── controllers.py        # HelloController, HealthController
+│   │   ├── factory.py            # Minimal Flask factory (no DB, no mail)
+│   │   └── routes.py             # /api/hello and /api/health
+│   ├── tests/
+│   │   ├── unit/                 # Controller and auth decorator unit tests
+│   │   └── integration/          # API integration tests
+│   ├── Dockerfile            # hello-service container image (port 5002)
+│   ├── entrypoint.sh         # Simple: exec python run.py (no DB wait, no migrations)
+│   ├── run.py                # Entry point
+│   └── requirements.txt      # Minimal: flask, flask-cors, pyjwt, python-dotenv
 ├── frontend/
 │   ├── src/
 │   │   ├── api/

@@ -28,8 +28,8 @@ services:
       retries: 10
       start_period: 30s
 
-  backend:
-    image: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-backend:${IMAGE_TAG:-latest}
+  login-service:
+    image: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-login:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       mysql:
@@ -38,15 +38,26 @@ services:
     expose:
       - "5001"
 
+  hello-service:
+    image: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-hello:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=5002
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    expose:
+      - "5002"
+
   frontend:
     image: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
-      - BACKEND_HOST=backend
+      - BACKEND_HOST=login-service
+      - HELLO_BACKEND_HOST=hello-service
     expose:
       - "8080"
     depends_on:
-      - backend
+      - login-service
 
   caddy:
     image: caddy:2-alpine
@@ -60,7 +71,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
     depends_on:
-      - backend
+      - login-service
       - frontend
 
 volumes:
