@@ -24,12 +24,15 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
 
 CMD ["./entrypoint.sh"]
 
-# Debug stage — adds remote-pdb on top of the base image
-FROM base AS debug
+# Test stage — base + dev dependencies (pytest, etc.)
+FROM base AS test
 
 USER root
 COPY requirements-dev.txt .
 RUN pip install --no-cache-dir -r requirements-dev.txt
 USER app
+
+# Debug stage — adds remote-pdb on top of the test image
+FROM test AS debug
 
 EXPOSE 4444

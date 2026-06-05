@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "projects/ai/hello_login_deploy/terraform/**"
+      - "projects/ai/login_separation/terraform/**"
 
 jobs:
   validate:
@@ -98,3 +99,76 @@ jobs:
       - name: terraform test
         run: terraform test
         working-directory: projects/ai/hello_login_deploy/terraform
+
+  # ── login_separation jobs ──────────────────────────────────────────────────
+
+  ls-validate:
+    name: login_separation — Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.7"
+
+      - name: terraform fmt check
+        run: terraform fmt -check -recursive
+        working-directory: projects/ai/login_separation/terraform
+
+      - name: terraform init
+        run: terraform init -backend=false
+        working-directory: projects/ai/login_separation/terraform
+
+      - name: terraform validate
+        run: terraform validate
+        working-directory: projects/ai/login_separation/terraform
+
+  ls-lint:
+    name: login_separation — TFLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: terraform-linters/setup-tflint@v4
+
+      - name: tflint init
+        run: tflint --init
+        working-directory: projects/ai/login_separation/terraform
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: tflint
+        run: tflint --recursive
+        working-directory: projects/ai/login_separation/terraform
+
+  ls-security:
+    name: login_separation — Checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: projects/ai/login_separation/terraform
+          framework: terraform
+          skip_check: CKV_AWS_79,CKV_AWS_111,CKV_AWS_356
+          quiet: true
+
+  ls-unit-test:
+    name: login_separation — terraform test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.7"
+
+      - name: terraform init
+        run: terraform init -backend=false
+        working-directory: projects/ai/login_separation/terraform
+
+      - name: terraform test
+        run: terraform test
+        working-directory: projects/ai/login_separation/terraform

@@ -47,8 +47,14 @@ test-containers: test-backend test-frontend
 build-backend:
 	docker build -t hello-login-login ./login-service
 
+build-backend-test:
+	docker build --target test -t hello-login-login-test ./login-service
+
 build-hello:
 	docker build -t hello-login-hello ./hello-service
+
+build-hello-test:
+	docker build --target test -t hello-login-hello-test ./hello-service
 
 build-frontend:
 	docker build -t hello-login-frontend ./frontend
@@ -56,20 +62,20 @@ build-frontend:
 test-backend: build-backend
 	container-structure-test test --image hello-login-login --config tests/container/backend.yaml
 
-test-backend-unit: build-backend
+test-backend-unit: build-backend-test
 	docker run --rm \
 		-e JWT_SECRET=test-secret \
 		-e TESTING=true \
 		-v $(CURDIR)/tests:/app/tests \
 		-v $(CURDIR)/pytest.ini:/app/pytest.ini \
-		hello-login-login \
-		sh -c "pip install -q pytest pytest-cov && PYTHONPATH=/app pytest tests/unit tests/integration --tb=short -q"
+		hello-login-login-test \
+		sh -c "PYTHONPATH=/app pytest tests/unit tests/integration --tb=short -q"
 
-test-hello-unit: build-hello
+test-hello-unit: build-hello-test
 	docker run --rm \
 		-e JWT_SECRET=test-secret \
 		-e TESTING=true \
-		hello-login-hello \
+		hello-login-hello-test \
 		pytest tests/unit tests/integration --tb=short -q
 
 test-frontend: build-frontend

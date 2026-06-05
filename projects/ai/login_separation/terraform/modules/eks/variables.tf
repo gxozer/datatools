@@ -49,4 +49,9 @@ variable "max_nodes" {
 variable "public_access_cidrs" {
   type    = list(string)
   default = ["0.0.0.0/0"]
+
+  validation {
+    condition     = !contains(var.public_access_cidrs, "0.0.0.0/0")
+    error_message = "public_access_cidrs must not contain 0.0.0.0/0. Set specific office/VPN CIDRs (e.g. [\"203.0.113.42/32\"]) before applying."
+  }
 }
