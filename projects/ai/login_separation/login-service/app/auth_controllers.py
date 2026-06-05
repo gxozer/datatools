@@ -141,7 +141,12 @@ class SignupController:
 
         # Basic email format validation
         at = email.find("@")
-        if at < 1 or at == len(email) - 1 or "." not in email[at + 1:]:
+        domain = email[at + 1:] if at >= 0 else ""
+        if (at < 1
+                or email.count("@") != 1
+                or not domain
+                or domain.startswith(".")
+                or "." not in domain):
             return jsonify({"error": "Invalid email address", "status": "error"}), 400
 
         # Password strength: minimum 8 characters
@@ -189,6 +194,8 @@ class LogoutController:
         """
         jti = g.current_user["jti"]  # guaranteed present by require_auth (PR-116)
         exp = g.current_user.get("exp")
+        if exp is None:
+            return jsonify({"error": "Invalid token", "status": "error"}), 400
         expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
         db.session.add(DeniedToken(jti=jti, expires_at=expires_at))
         now = datetime.now(timezone.utc)
@@ -283,7 +290,7 @@ class PasswordResetController:
 
         if not isinstance(raw_token, str) or not isinstance(new_password, str):
             return jsonify({"error": "token and password are required", "status": "error"}), 400
-        if not raw_token.strip() or not new_password:
+        if not raw_token.strip() or not new_password.strip():
             return jsonify({"error": "token and password are required", "status": "error"}), 400
         raw_token = raw_token.strip()
 
@@ -312,7 +319,8 @@ class PasswordResetController:
             return jsonify({"error": "Invalid or expired reset token", "status": "error"}), 400
 
         user.hashed_password = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
-        user.tokens_invalidated_at = datetime.now(timezone.utc)
+        # Truncate to seconds for consistent comparison with JWT iat (second precision).
+        user.tokens_invalidated_at = datetime.now(timezone.utc).replace(microsecond=0)
         reset_token.used = True
         db.session.commit()
 

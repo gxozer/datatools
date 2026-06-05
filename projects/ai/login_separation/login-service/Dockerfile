@@ -11,8 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 RUN chmod +x entrypoint.sh \
-    && addgroup --system app \
-    && adduser --system --ingroup app app \
+    && addgroup --system --gid 1000 app \
+    && adduser --system --uid 1000 --ingroup app app \
     && mkdir -p /app/instance \
     && chown -R app:app /app
 

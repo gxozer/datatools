@@ -100,7 +100,12 @@ class Auth:
                     inv = user.tokens_invalidated_at
                     if inv.tzinfo is None:
                         inv = inv.replace(tzinfo=timezone.utc)
-                    if datetime.fromtimestamp(iat, tz=timezone.utc) <= inv:
+                    # Use strict < (not <=) to avoid false revocations: JWT iat has
+                    # second precision but tokens_invalidated_at has microsecond precision.
+                    # tokens_invalidated_at is stored truncated to seconds (see auth_controllers.py)
+                    # so iat == inv means the token was issued in the same second as the reset,
+                    # and we accept it rather than risk locking out a legitimate fresh login.
+                    if datetime.fromtimestamp(iat, tz=timezone.utc) < inv:
                         return jsonify({"error": "Token has been revoked", "status": "error"}), 401
 
             if allowed_roles is not None and payload.get("role") not in allowed_roles:

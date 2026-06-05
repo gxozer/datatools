@@ -9,7 +9,10 @@ class AppFactory:
     def create(config=None):
         app = Flask(__name__)
         load_dotenv()
-        app.config["JWT_SECRET"] = os.environ.get("JWT_SECRET", "dev-only-secret-change-for-production-32c")
+        jwt_secret = os.environ.get("JWT_SECRET")
+        if not jwt_secret:
+            raise RuntimeError("JWT_SECRET environment variable is required")
+        app.config["JWT_SECRET"] = jwt_secret
         cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
         CORS(app, origins=cors_origins.split(","))
         from .routes import Router

@@ -55,10 +55,10 @@ Expected output: **157 passed**
 
 ## hello-service Tests
 
-hello-service has its own test suite (no database required).
+hello-service has its own test suite (no database required). Run with an isolated `PYTHONPATH` so hello-service's `app` package takes precedence over login-service's.
 
 ```bash
-.venv/bin/pytest hello-service/tests/ -v
+PYTHONPATH=hello-service .venv/bin/pytest hello-service/tests/ -v
 ```
 
 Expected output: **22 passed**
@@ -66,7 +66,7 @@ Expected output: **22 passed**
 ### With coverage
 
 ```bash
-.venv/bin/pytest hello-service/tests/ --cov=app --cov-report=term-missing
+PYTHONPATH=hello-service .venv/bin/pytest hello-service/tests/ --cov=app --cov-report=term-missing
 ```
 
 ---
