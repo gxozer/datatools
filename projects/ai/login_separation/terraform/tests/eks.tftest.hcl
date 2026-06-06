@@ -68,13 +68,14 @@ mock_provider "tls" {
 }
 
 variables {
-  environment        = "staging"
-  private_subnet_ids = ["subnet-mock-a", "subnet-mock-b", "subnet-mock-c"]
-  public_subnet_ids  = ["subnet-mock-pub-a", "subnet-mock-pub-b", "subnet-mock-pub-c"]
-  eks_node_sg_id     = "sg-mock"
-  node_type          = "t3.small"
-  min_nodes          = 2
-  max_nodes          = 6
+  environment         = "staging"
+  private_subnet_ids  = ["subnet-mock-a", "subnet-mock-b", "subnet-mock-c"]
+  public_subnet_ids   = ["subnet-mock-pub-a", "subnet-mock-pub-b", "subnet-mock-pub-c"]
+  eks_node_sg_id      = "sg-mock"
+  node_type           = "t3.small"
+  min_nodes           = 2
+  max_nodes           = 6
+  public_access_cidrs = ["10.0.0.0/8"] # non-0.0.0.0/0 value to satisfy validation
 }
 
 run "cluster_name_includes_environment" {

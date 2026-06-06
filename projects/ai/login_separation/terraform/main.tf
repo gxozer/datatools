@@ -69,8 +69,8 @@ data "aws_caller_identity" "current" {}
 module "networking" {
   source = "./modules/networking"
 
-  environment = var.environment  # used in resource names, e.g. "hello-login-staging"
-  vpc_cidr    = var.vpc_cidr     # e.g. "10.0.0.0/16" for staging
+  environment = var.environment # used in resource names, e.g. "hello-login-staging"
+  vpc_cidr    = var.vpc_cidr    # e.g. "10.0.0.0/16" for staging
 }
 
 # ── EKS ───────────────────────────────────────────────────────────────────────
@@ -81,13 +81,13 @@ module "eks" {
   source = "./modules/eks"
 
   environment         = var.environment
-  private_subnet_ids  = module.networking.private_subnet_ids  # nodes go in private subnets
-  public_subnet_ids   = module.networking.public_subnet_ids   # passed to vpc_config so the control plane can communicate
-  eks_node_sg_id      = module.networking.eks_node_sg_id      # security group assigned to worker nodes
-  node_type           = var.eks_node_type                     # e.g. "t3.small"
-  min_nodes           = var.eks_min_nodes                     # cluster autoscaler lower bound
-  max_nodes           = var.eks_max_nodes                     # cluster autoscaler upper bound
-  public_access_cidrs = var.eks_public_access_cidrs           # restrict Kubernetes API endpoint access
+  private_subnet_ids  = module.networking.private_subnet_ids # nodes go in private subnets
+  public_subnet_ids   = module.networking.public_subnet_ids  # passed to vpc_config so the control plane can communicate
+  eks_node_sg_id      = module.networking.eks_node_sg_id     # security group assigned to worker nodes
+  node_type           = var.eks_node_type                    # e.g. "t3.small"
+  min_nodes           = var.eks_min_nodes                    # cluster autoscaler lower bound
+  max_nodes           = var.eks_max_nodes                    # cluster autoscaler upper bound
+  public_access_cidrs = var.eks_public_access_cidrs          # restrict Kubernetes API endpoint access
 }
 
 # ── ECR ───────────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ module "eks" {
 module "ecr" {
   source = "./modules/ecr"
 
-  create_repos = var.ecr_create_repos  # false for production — repos owned by staging state
+  create_repos = var.ecr_create_repos # false for production — repos owned by staging state
 }
 
 # ── RDS ───────────────────────────────────────────────────────────────────────
@@ -134,13 +134,13 @@ module "secrets" {
 module "iam" {
   source = "./modules/iam"
 
-  aws_region        = var.aws_region
-  aws_account_id    = data.aws_caller_identity.current.account_id # from the data source above
-  cluster_name      = module.eks.cluster_name                     # used in role names
-  oidc_provider_arn = module.eks.oidc_provider_arn                # required for IRSA trust policies
-  oidc_provider_url = module.eks.oidc_provider_url                # used to build OIDC condition keys
-  secret_arn                 = module.secrets.secret_arn                   # ESO role is scoped to this secret only
-  rds_master_user_secret_arn = module.rds.master_user_secret_arn           # ESO also reads the RDS-managed secret for DATABASE_URL
+  aws_region                  = var.aws_region
+  aws_account_id              = data.aws_caller_identity.current.account_id # from the data source above
+  cluster_name                = module.eks.cluster_name                     # used in role names
+  oidc_provider_arn           = module.eks.oidc_provider_arn                # required for IRSA trust policies
+  oidc_provider_url           = module.eks.oidc_provider_url                # used to build OIDC condition keys
+  secret_arn                  = module.secrets.secret_arn                   # ESO role is scoped to this secret only
+  rds_master_user_secret_arn  = module.rds.master_user_secret_arn           # ESO also reads the RDS-managed secret for DATABASE_URL
   github_org                  = var.github_org                              # GitHub Actions role is scoped to this org
   github_repo                 = var.github_repo                             # and this repo
   create_github_oidc_provider = var.create_github_oidc_provider             # account-global; only create once (staging)
@@ -172,8 +172,8 @@ resource "aws_security_group_rule" "rds_from_eks_cluster" {
   from_port                = 3306
   to_port                  = 3306
   protocol                 = "tcp"
-  security_group_id        = module.networking.rds_sg_id           # the RDS security group
-  source_security_group_id = module.eks.cluster_security_group_id  # EKS auto-created cluster SG
+  security_group_id        = module.networking.rds_sg_id          # the RDS security group
+  source_security_group_id = module.eks.cluster_security_group_id # EKS auto-created cluster SG
 
   depends_on = [module.networking, module.eks]
 }

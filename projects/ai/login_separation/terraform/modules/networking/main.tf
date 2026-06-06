@@ -139,7 +139,7 @@ resource "aws_eip" "nat" {
 # because the NAT gateway's subnet needs an internet route to function.
 resource "aws_nat_gateway" "this" {
   allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public[0].id  # placed in the first public subnet (us-west-2a)
+  subnet_id     = aws_subnet.public[0].id # placed in the first public subnet (us-west-2a)
 
   tags = {
     Name = local.name_prefix
@@ -156,7 +156,7 @@ resource "aws_route_table" "public" {
   vpc_id = aws_vpc.this.id
 
   route {
-    cidr_block = "0.0.0.0/0"       # all traffic not destined for the VPC itself
+    cidr_block = "0.0.0.0/0" # all traffic not destined for the VPC itself
     gateway_id = aws_internet_gateway.this.id
   }
 
@@ -214,7 +214,7 @@ resource "aws_security_group" "eks_nodes" {
   egress {
     from_port   = 0
     to_port     = 0
-    protocol    = "-1"           # -1 means all protocols
+    protocol    = "-1"          # -1 means all protocols
     cidr_blocks = ["0.0.0.0/0"] # anywhere
   }
 

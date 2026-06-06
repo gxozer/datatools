@@ -12,7 +12,7 @@ output "vpc_id" {
 # control plane can be associated with them. Also used by the ALB controller
 # to place load balancers.
 output "public_subnet_ids" {
-  value = aws_subnet.public[*].id  # [*] collects all 3 IDs into a list
+  value = aws_subnet.public[*].id # [*] collects all 3 IDs into a list
 }
 
 # IDs of the 3 private subnets — passed to the EKS module (worker nodes go here)

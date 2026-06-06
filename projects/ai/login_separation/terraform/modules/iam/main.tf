@@ -130,7 +130,7 @@ data "aws_iam_policy_document" "eso_assume" {
 data "aws_iam_policy_document" "eso" {
   statement {
     actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-    resources = ["${var.secret_arn}*"]  # * matches the version suffix in the ARN
+    resources = ["${var.secret_arn}*"] # * matches the version suffix in the ARN
   }
 
   dynamic "statement" {
@@ -177,7 +177,7 @@ data "aws_iam_policy_document" "github_assume" {
     effect  = "Allow"
 
     principals {
-      type        = "Federated"
+      type = "Federated"
       # The GitHub Actions OIDC provider registered below.
       identifiers = ["arn:aws:iam::${var.aws_account_id}:oidc-provider/token.actions.githubusercontent.com"]
     }

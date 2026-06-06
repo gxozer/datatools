@@ -47,7 +47,7 @@ locals {
         description  = "Keep last 10 tagged images"
         selection = {
           tagStatus     = "tagged"
-          tagPrefixList = ["v", "sha-"]   # only count images tagged with these prefixes
+          tagPrefixList = ["v", "sha-"] # only count images tagged with these prefixes
           countType     = "imageCountMoreThan"
           countNumber   = 10
         }
@@ -102,6 +102,6 @@ data "aws_ecr_repository" "existing" {
 resource "aws_ecr_lifecycle_policy" "this" {
   for_each = aws_ecr_repository.this
 
-  repository = each.value.name   # each.value is the aws_ecr_repository resource
+  repository = each.value.name # each.value is the aws_ecr_repository resource
   policy     = local.lifecycle_policy
 }

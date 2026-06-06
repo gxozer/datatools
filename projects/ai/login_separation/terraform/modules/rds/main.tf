@@ -29,7 +29,7 @@ resource "aws_db_subnet_group" "this" {
 # recreating the DB instance (changing the default group would require recreation).
 resource "aws_db_parameter_group" "this" {
   name   = "hello-login-${var.environment}-mysql8"
-  family = "mysql8.0"  # must match the engine version
+  family = "mysql8.0" # must match the engine version
 
   tags = {
     Name = "hello-login-${var.environment}-mysql8"
@@ -39,11 +39,11 @@ resource "aws_db_parameter_group" "this" {
 # ── DB Instance ───────────────────────────────────────────────────────────────
 
 resource "aws_db_instance" "this" {
-  identifier = "hello-login-${var.environment}"  # name shown in the AWS console
+  identifier = "hello-login-${var.environment}" # name shown in the AWS console
 
   engine         = "mysql"
   engine_version = "8.0"
-  instance_class = var.instance_class  # e.g. "db.t3.micro"
+  instance_class = var.instance_class # e.g. "db.t3.micro"
 
   # Storage: 20 GB gp2 (General Purpose SSD v2 — balanced price/performance EBS volume). AWS auto-scales this upward
   # if needed (with autoscaling enabled, which is the default on RDS).
@@ -62,7 +62,7 @@ resource "aws_db_instance" "this" {
 
   parameter_group_name   = aws_db_parameter_group.this.name
   db_subnet_group_name   = aws_db_subnet_group.this.name
-  vpc_security_group_ids = [var.rds_sg_id]  # only allows MySQL from EKS nodes
+  vpc_security_group_ids = [var.rds_sg_id] # only allows MySQL from EKS nodes
 
   # Keep 7 days of automated daily snapshots. Enables point-in-time recovery
   # to any second within the retention window.

@@ -9,7 +9,7 @@ variables {
 # providers, causing the test suite to fail. Since all assertions check values
 # that are fully known at plan time (names, settings), plan is sufficient.
 
-run "creates_backend_repo" {
+run "creates_login_repo" {
   command = plan
 
   module {
@@ -17,8 +17,21 @@ run "creates_backend_repo" {
   }
 
   assert {
-    condition     = aws_ecr_repository.this["hello-login-backend"].name == "hello-login-backend"
-    error_message = "Backend ECR repo should be named hello-login-backend"
+    condition     = aws_ecr_repository.this["hello-login-login"].name == "hello-login-login"
+    error_message = "Login ECR repo should be named hello-login-login"
+  }
+}
+
+run "creates_hello_repo" {
+  command = plan
+
+  module {
+    source = "./modules/ecr"
+  }
+
+  assert {
+    condition     = aws_ecr_repository.this["hello-login-hello"].name == "hello-login-hello"
+    error_message = "Hello ECR repo should be named hello-login-hello"
   }
 }
 
@@ -43,7 +56,7 @@ run "scan_on_push_enabled" {
   }
 
   assert {
-    condition     = aws_ecr_repository.this["hello-login-backend"].image_scanning_configuration[0].scan_on_push == true
+    condition     = aws_ecr_repository.this["hello-login-login"].image_scanning_configuration[0].scan_on_push == true
     error_message = "Scan on push should be enabled"
   }
 }
@@ -56,7 +69,7 @@ run "lifecycle_policies_exist" {
   }
 
   assert {
-    condition     = length(aws_ecr_lifecycle_policy.this) == 2
-    error_message = "Expected lifecycle policies for both repos"
+    condition     = length(aws_ecr_lifecycle_policy.this) == 3
+    error_message = "Expected lifecycle policies for all three repos"
   }
 }

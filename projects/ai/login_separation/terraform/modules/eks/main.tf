@@ -77,7 +77,7 @@ resource "aws_iam_role_policy_attachment" "cluster_policy" {
 resource "aws_eks_cluster" "this" {
   name     = local.cluster_name
   role_arn = aws_iam_role.cluster.arn
-  version  = "1.29"  # Kubernetes version — upgrade this periodically
+  version  = "1.29" # Kubernetes version — upgrade this periodically
 
   vpc_config {
     # Both private and public subnet IDs are provided so EKS can place its
@@ -91,7 +91,7 @@ resource "aws_eks_cluster" "this" {
 
     # endpoint_public_access=true: kubectl works from your laptop without a VPN.
     # Set to false for stricter environments that require a VPN for cluster access.
-    endpoint_public_access  = true
+    endpoint_public_access = true
 
     # Restrict which IPs can reach the public Kubernetes API endpoint.
     # Default is ["0.0.0.0/0"] (open to internet). Override in tfvars with your
@@ -163,11 +163,11 @@ resource "aws_eks_node_group" "this" {
 
   # Nodes go in private subnets — no public IP, not directly reachable from internet.
   subnet_ids     = var.private_subnet_ids
-  instance_types = [var.node_type]   # e.g. ["t3.small"]
-  ami_type       = "AL2_x86_64"     # AL2 = Amazon Linux 2; AMI = Amazon Machine Image — the OS image used to launch nodes
+  instance_types = [var.node_type] # e.g. ["t3.small"]
+  ami_type       = "AL2_x86_64"    # AL2 = Amazon Linux 2; AMI = Amazon Machine Image — the OS image used to launch nodes
 
   scaling_config {
-    desired_size = var.min_nodes  # start at the minimum; autoscaler adjusts from here
+    desired_size = var.min_nodes # start at the minimum; autoscaler adjusts from here
     min_size     = var.min_nodes
     max_size     = var.max_nodes
   }

@@ -21,10 +21,10 @@
 # an ALB in AWS with the correct listener rules and target groups.
 resource "helm_release" "alb_controller" {
   name       = "aws-load-balancer-controller"
-  repository = "https://aws.github.io/eks-charts"  # official AWS Helm chart repo
+  repository = "https://aws.github.io/eks-charts" # official AWS Helm chart repo
   chart      = "aws-load-balancer-controller"
-  namespace  = "kube-system"  # installed alongside other cluster-level components
-  version    = "1.7.2"        # pin the version to avoid unexpected upgrades
+  namespace  = "kube-system" # installed alongside other cluster-level components
+  version    = "1.7.2"       # pin the version to avoid unexpected upgrades
 
   # The cluster name — the controller needs this to tag the ALBs it creates
   # so it knows which cluster owns them.
@@ -97,10 +97,10 @@ resource "time_sleep" "alb_controller_ready" {
 
 resource "helm_release" "external_secrets" {
   name       = "external-secrets"
-  repository = "https://charts.external-secrets.io"  # official ESO Helm chart repo
+  repository = "https://charts.external-secrets.io" # official ESO Helm chart repo
   chart      = "external-secrets"
   namespace  = "external-secrets"
-  version    = "0.9.13"  # pin the version
+  version    = "0.9.13" # pin the version
 
   # Create the "external-secrets" namespace if it does not already exist.
   # Without this flag, the release would fail if the namespace is missing.

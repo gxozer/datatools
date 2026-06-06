@@ -29,6 +29,7 @@ services:
     environment:
       - FLASK_DEBUG=false
       - MAIL_SUPPRESS_SEND=${MAIL_SUPPRESS_SEND:-0}
+      # WARNING: override JWT_SECRET for any non-localhost deployment (see .env.ec2.example)
       - JWT_SECRET=${JWT_SECRET:-dev-only-secret-change-for-production-32c}
       - DATABASE_URL=${DATABASE_URL:-mysql+pymysql://hello:hello@mysql:3306/hello_login}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
@@ -41,6 +42,7 @@ services:
     ports:
       - "5002:5002"
     environment:
+      # WARNING: override JWT_SECRET for any non-localhost deployment (see .env.ec2.example)
       - JWT_SECRET=${JWT_SECRET:-dev-only-secret-change-for-production-32c}
       - PORT=5002
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}

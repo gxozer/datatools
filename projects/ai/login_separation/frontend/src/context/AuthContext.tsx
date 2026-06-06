@@ -62,6 +62,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<JwtPayload | null>(null);
   const [token, setToken] = useState<string | null>(null);
 
+  // Token storage: localStorage is used for simplicity. The trade-off is that any XSS payload
+  // running in this origin can read the token. The alternative (HttpOnly cookies) would require
+  // backend Set-Cookie, CORS credentials:include, and CSRF protection — a larger change.
+  // Mitigation: strong CSP headers; tokens expire in 24h; logout revokes server-side.
+
   // On mount: restore valid session from localStorage, clear expired tokens.
   useEffect(() => {
     const stored = localStorage.getItem('token');

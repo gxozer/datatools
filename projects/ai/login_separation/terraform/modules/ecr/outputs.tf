@@ -8,7 +8,11 @@
 # Full ECR URL for the backend image.
 # Used in docker push commands and in k8s/overlays/*/kustomization.yaml.
 output "backend_repo_url" {
-  value = var.create_repos ? aws_ecr_repository.this["hello-login-backend"].repository_url : data.aws_ecr_repository.existing["hello-login-backend"].repository_url
+  value = var.create_repos ? aws_ecr_repository.this["hello-login-login"].repository_url : data.aws_ecr_repository.existing["hello-login-login"].repository_url
+}
+
+output "hello_repo_url" {
+  value = var.create_repos ? aws_ecr_repository.this["hello-login-hello"].repository_url : data.aws_ecr_repository.existing["hello-login-hello"].repository_url
 }
 
 # Full ECR URL for the frontend image.

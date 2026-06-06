@@ -197,10 +197,14 @@ class LogoutController:
         if exp is None:
             return jsonify({"error": "Invalid token", "status": "error"}), 400
         expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
-        db.session.add(DeniedToken(jti=jti, expires_at=expires_at))
         now = datetime.now(timezone.utc)
-        db.session.query(DeniedToken).filter(DeniedToken.expires_at < now).delete()
-        db.session.commit()
+        try:
+            db.session.add(DeniedToken(jti=jti, expires_at=expires_at))
+            db.session.query(DeniedToken).filter(DeniedToken.expires_at < now).delete()
+            db.session.commit()
+        except IntegrityError:
+            # Concurrent logout already inserted this jti — token is already revoked.
+            db.session.rollback()
         return jsonify({"message": "Logged out successfully.", "status": "ok"}), 200
 
 
