@@ -1,0 +1,11 @@
+# Overrides URL-based ConfigMap keys for the dev environment.
+# Replace YOUR_EC2_IP with the actual IP from `cd infra/dev && terraform output public_ip`.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello-login-config
+
+data:
+  FRONTEND_URL: "http://YOUR_EC2_IP"
+  CORS_ORIGINS: "http://YOUR_EC2_IP"

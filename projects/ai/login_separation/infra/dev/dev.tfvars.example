@@ -1,0 +1,8 @@
+# Copy to dev.tfvars and fill in your values.
+# Run: cp infra/dev/dev.tfvars.example infra/dev/dev.tfvars
+
+aws_region     = "us-west-2"
+instance_type  = "t3.small"
+key_name       = "hello-login-dev"      # create with: aws ec2 create-key-pair --key-name hello-login-dev --region us-west-2 --query 'KeyMaterial' --output text > ~/.ssh/hello-login-dev.pem
+ssh_cidr_blocks = ["YOUR_IP/32"]        # restrict to your IPv4: curl -4 ifconfig.me
+ecr_account_id = "277070500859"

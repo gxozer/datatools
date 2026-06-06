@@ -1,0 +1,26 @@
+/* App.css — Root and component styles */
+
+.app {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+/* Status messages: loading and error states */
+.status {
+  text-align: center;
+  font-size: 1.2rem;
+  margin-top: 2rem;
+}
+
+.status.error {
+  color: #e53e3e;
+}
+
+/* HelloMessage component */
+.hello-message h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  text-align: center;
+}

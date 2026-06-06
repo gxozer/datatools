@@ -1,0 +1,64 @@
+schemaVersion: "2.0.0"
+
+# Container structure tests for the Flask backend image.
+# Written before the Dockerfile exists (TDD red phase).
+# Run with: container-structure-test test --image hello-login-backend --config tests/container/backend.yaml
+
+fileExistenceTests:
+  - name: "requirements.txt is present in image"
+    path: "/app/requirements.txt"
+    shouldExist: true
+
+  - name: "app package is present"
+    path: "/app/app"
+    shouldExist: true
+
+  - name: "run.py entry point is present"
+    path: "/app/run.py"
+    shouldExist: true
+
+  - name: ".venv is NOT present (excluded by .dockerignore)"
+    path: "/app/.venv"
+    shouldExist: false
+
+  - name: "instance/ is present (volume mount point, owned by app)"
+    path: "/app/instance"
+    shouldExist: true
+
+  - name: ".env is NOT present (excluded by .dockerignore)"
+    path: "/app/.env"
+    shouldExist: false
+
+metadataTest:
+  exposedPorts: ["5001"]
+  envVars:
+    - key: "PYTHONDONTWRITEBYTECODE"
+      value: "1"
+    - key: "PYTHONUNBUFFERED"
+      value: "1"
+
+commandTests:
+  - name: "Python is available"
+    command: "python"
+    args: ["--version"]
+    expectedOutput: ["Python 3\\."]
+
+  - name: "Flask is installed"
+    command: "python"
+    args: ["-c", "import flask; print(flask.__version__)"]
+    expectedOutput: ["3\\."]
+
+  - name: "bcrypt is installed"
+    command: "python"
+    args: ["-c", "import bcrypt; print('ok')"]
+    expectedOutput: ["ok"]
+
+  - name: "PyJWT is installed"
+    command: "python"
+    args: ["-c", "import jwt; print('ok')"]
+    expectedOutput: ["ok"]
+
+  - name: "process runs as non-root user"
+    command: "python"
+    args: ["-c", "import os; assert os.getuid() != 0, 'running as root'; print('ok')"]
+    expectedOutput: ["ok"]

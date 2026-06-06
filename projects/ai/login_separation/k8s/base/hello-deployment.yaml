@@ -1,0 +1,79 @@
+# hello-deployment.yaml
+#
+# Deployment for the stateless hello-service.
+# No database, no migrations — no initContainer needed.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: hello
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  template:
+    metadata:
+      labels:
+        app: hello
+
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: hello
+
+      containers:
+        - name: hello
+          image: hello-login-hello   # placeholder; Kustomize replaces with full ECR URL
+          command: ["python", "run.py"]
+
+          ports:
+            - containerPort: 5002
+
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hello-login-secrets
+                  key: JWT_SECRET
+            - name: PORT
+              value: "5002"
+
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5002
+            initialDelaySeconds: 10
+            periodSeconds: 15
+
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5002
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

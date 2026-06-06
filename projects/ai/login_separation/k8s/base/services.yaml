@@ -1,0 +1,65 @@
+# services.yaml
+#
+# A Service is a Kubernetes resource that gives a stable network identity to a
+# set of pods. Pods are ephemeral — they come and go, and their IP addresses change.
+# A Service provides a fixed name and IP that other pods can always reach,
+# regardless of which pods are currently running behind it.
+#
+# Services also act as an internal load balancer — requests are distributed
+# across all healthy pods that match the selector.
+#
+# Both Services here are of the default type: ClusterIP.
+# ClusterIP means the Service is only reachable from WITHIN the cluster.
+# External traffic reaches the app via the Ingress (defined in ingress.yaml),
+# which routes through the ALB (Application Load Balancer) to these Services.
+
+# ── Login Service ─────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: login   # the DNS name other pods use to reach the login service
+
+spec:
+  # selector — which pods this Service routes traffic to.
+  # Matches pods with the label app=login (set in login-deployment.yaml).
+  selector:
+    app: login
+
+  ports:
+    - port: 5001        # the port this Service listens on (what callers connect to)
+      targetPort: 5001  # the port on the pod to forward traffic to
+                        # must match containerPort in login-deployment.yaml
+
+---
+
+# ── Hello Service ──────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello   # the DNS name other pods use to reach the hello service
+
+spec:
+  # selector — which pods this Service routes traffic to.
+  # Matches pods with the label app=hello (set in hello-deployment.yaml).
+  selector:
+    app: hello
+
+  ports:
+    - port: 5002        # the port this Service listens on
+      targetPort: 5002  # must match containerPort in hello-deployment.yaml
+
+---
+
+# ── Frontend Service ──────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend   # DNS name: http://frontend:8080 from within the cluster
+
+spec:
+  selector:
+    app: frontend   # routes traffic to pods with label app=frontend
+
+  ports:
+    - port: 8080
+      targetPort: 8080   # must match containerPort in frontend-deployment.yaml

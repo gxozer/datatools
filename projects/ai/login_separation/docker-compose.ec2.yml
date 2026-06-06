@@ -1,0 +1,79 @@
+# docker-compose.ec2.yml
+#
+# Runs the full hello-login stack on a single EC2 instance.
+# Pulls pre-built images from ECR — does NOT build from source.
+#
+# `make dev-deploy` copies this file to /opt/hello-login/docker-compose.yml on EC2
+# and copies .env.ec2 to /opt/hello-login/.env (the default file Docker Compose
+# auto-loads for both YAML variable interpolation and backend env vars).
+#
+# To deploy manually from the EC2 instance (after make dev-deploy has run once):
+#   cd /opt/hello-login && docker compose pull && docker compose up -d
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: devrootpass
+      MYSQL_DATABASE: hello_login
+      MYSQL_USER: hello
+      MYSQL_PASSWORD: devpass
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "hello", "-pdevpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  login-service:
+    image: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-login:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file: .env
+    expose:
+      - "5001"
+
+  hello-service:
+    image: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-hello:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=5002
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    expose:
+      - "5002"
+
+  frontend:
+    image: 277070500859.dkr.ecr.us-west-2.amazonaws.com/hello-login-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - BACKEND_HOST=login-service
+      - HELLO_BACKEND_HOST=hello-service
+    expose:
+      - "8080"
+    depends_on:
+      - login-service
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DEV_DOMAIN=${DEV_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - login-service
+      - frontend
+
+volumes:
+  mysql_data:
+  caddy_data:
