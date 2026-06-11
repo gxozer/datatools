@@ -1,0 +1,12 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Keep the REPL output clean — only show warnings/errors from libraries. -->
+    <root level="WARN">
+        <appender-ref ref="STDOUT" />
+    </root>
+</configuration>

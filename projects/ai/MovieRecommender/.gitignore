@@ -1,0 +1,12 @@
+# Gradle
+.gradle/
+build/
+
+# Kotlin
+.kotlin/
+
+# IntelliJ
+.idea/
+
+# OS
+.DS_Store
