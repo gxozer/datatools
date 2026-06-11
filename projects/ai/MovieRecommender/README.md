@@ -314,7 +314,7 @@ A score above ~0.80 is a strong match; below ~0.60 is likely a weak one.
 
 | Library | Version | Purpose |
 |---|---|---|
-| Kotlin | 1.9.22 | Language |
+| Kotlin | 2.0.21 | Language |
 | Ktor Client (CIO) | 2.3.7 | Async HTTP for Ollama calls |
 | kotlinx.serialization | 1.6.2 | JSON encode/decode |
 | kotlinx.coroutines | 1.7.3 | Suspend functions |
