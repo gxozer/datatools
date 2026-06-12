@@ -8,9 +8,10 @@ services:
       MYSQL_PASSWORD: cf
     # LOAD DATA LOCAL INFILE is the bulk-load path (TDS_PHASE1 §7)
     command: --local-infile=1
-    # host port 3307: dev machines commonly run a local mysqld on 3306
+    # localhost-only binding (dev DB, weak credentials); port 3307 because
+    # dev machines commonly run a local mysqld on 3306
     ports:
-      - "3307:3306"
+      - "127.0.0.1:3307:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:

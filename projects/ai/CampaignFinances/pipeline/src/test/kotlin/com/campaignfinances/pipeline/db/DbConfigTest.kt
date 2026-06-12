@@ -9,7 +9,7 @@ class DbConfigTest {
     fun `uses local docker compose defaults when env is empty`() {
         val config = DbConfig.fromEnv(emptyMap())
 
-        assertEquals("jdbc:mysql://localhost:3307/campaign_finances?allowLoadLocalInfile=true", config.url)
+        assertEquals("jdbc:mysql://localhost:3307/campaign_finances", config.url)
         assertEquals("cf", config.user)
         assertEquals("cf", config.password)
     }
