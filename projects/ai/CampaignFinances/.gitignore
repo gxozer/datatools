@@ -1,0 +1,14 @@
+# IDE state — the Gradle build is the source of truth
+.idea/
+*.iml
+
+# Gradle
+.gradle/
+build/
+
+# secrets (FEC_API_KEY etc.)
+.env
+.env.*
+
+# OS litter
+.DS_Store
