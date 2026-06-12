@@ -1,0 +1,24 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: campaign_finances
+      MYSQL_USER: cf
+      MYSQL_PASSWORD: cf
+    # LOAD DATA LOCAL INFILE is the bulk-load path (TDS_PHASE1 §7)
+    command: --local-infile=1
+    # localhost-only binding (dev DB, weak credentials); port 3307 because
+    # dev machines commonly run a local mysqld on 3306
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mysql-data:
