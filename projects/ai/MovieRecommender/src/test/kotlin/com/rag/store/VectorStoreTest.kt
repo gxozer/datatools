@@ -7,7 +7,7 @@ import kotlin.test.assertFailsWith
 
 class VectorStoreTest {
 
-    private val store = VectorStore(OllamaClient())
+    private val store = InMemoryVectorStore(OllamaClient())
 
     @Test
     fun `identical vectors have similarity of 1`() {

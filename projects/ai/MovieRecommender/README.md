@@ -16,7 +16,7 @@ This is a working **Retrieval-Augmented Generation (RAG)** prototype. You descri
   [Embed your query]  ←  nomic-embed-text (local)
         │
         ▼
-  [Cosine similarity search]  ←  in-memory vector store
+  [Cosine similarity search]  ←  VectorStore (in-memory or Qdrant)
         │
         ▼
   Top 4 matching movies/books
@@ -77,6 +77,8 @@ ollama serve
 
 Keep this running in a separate terminal while you use the app.
 
+> **Already running?** If you see `bind: address already in use`, Ollama is already up — skip this step.
+
 ### 4. Java 17+
 
 ```bash
@@ -89,7 +91,7 @@ java -version   # must be 17 or higher
 
 ```bash
 git clone <this-repo>
-cd rag-recommender
+cd MovieRecommender
 ./gradlew run --console=plain
 ```
 
@@ -156,9 +158,10 @@ Goodbye!
 ## Project structure
 
 ```
-rag-recommender/
+MovieRecommender/
 ├── build.gradle.kts                          # Kotlin + Ktor + serialization deps
 ├── settings.gradle.kts
+├── docker-compose.yml                        # Qdrant service (optional persistent store)
 ├── README.md                                 # this file
 └── src/main/kotlin/com/rag/
     ├── Main.kt                               # Entry point + interactive REPL
@@ -172,9 +175,11 @@ rag-recommender/
     │                                         #   POST /api/embeddings
     │                                         #   POST /api/chat
     ├── store/
-    │   └── VectorStore.kt                    # In-memory vector DB
-    │                                         #   index()  — embed + store
-    │                                         #   search() — cosine similarity lookup
+    │   ├── VectorStore.kt                    # Interface: index() / search()
+    │   ├── InMemoryVectorStore.kt            # Default: brute-force cosine similarity
+    │   ├── QdrantVectorStore.kt              # Optional: persistent Qdrant backend
+    │   ├── QdrantApi.kt                      # Interface (enables fakes in tests)
+    │   └── HttpQdrantClient.kt               # Ktor REST client for Qdrant
     └── rag/
         └── RagEngine.kt                      # RAG pipeline
                                               #   retrieve → augment → generate
@@ -188,9 +193,12 @@ Handles all HTTP communication with Ollama. Two methods:
 - `chat(messages)` — calls `/api/chat`, returns the assistant's reply string
 
 #### `VectorStore`
-A simple in-memory vector database backed by a `MutableList<EmbeddedChunk>`.
-- `indexAll(items)` — embeds each item and stores it at startup
-- `search(query, topK)` — embeds the query, computes cosine similarity against all stored vectors, returns top-K sorted by score
+An interface with two implementations selected at startup via the `VECTOR_STORE` env var:
+
+- **`InMemoryVectorStore`** (default) — brute-force cosine similarity over a `MutableList`. Zero-config, re-embeds the catalogue on every restart.
+- **`QdrantVectorStore`** (`VECTOR_STORE=qdrant`) — persistent Qdrant backend. Embeddings survive restarts; unchanged items are not re-embedded (content-hash idempotency). Requires `docker compose up -d`.
+
+Both expose the same `index()` / `search()` contract, so `RagEngine` is unaffected by which backend is active.
 
 #### `RagEngine`
 Orchestrates the three RAG steps:
@@ -205,7 +213,7 @@ A hardcoded catalogue of `MediaItem` objects. Each item has a `toEmbeddableText(
 
 ## Configuration
 
-All configuration is in `Main.kt`:
+### Ollama models (`Main.kt`)
 
 ```kotlin
 val ollama = OllamaClient(
@@ -216,6 +224,42 @@ val ollama = OllamaClient(
 
 val engine = RagEngine(store, ollama, topK = 4)  // increase topK for more candidates
 ```
+
+### Vector store (env var)
+
+| `VECTOR_STORE` | Backend | Requires |
+| --- | --- | --- |
+| _(unset)_ | In-memory (default) | Ollama only |
+| `qdrant` | Qdrant (persistent) | Ollama + `docker compose up -d` |
+
+```bash
+# Default — re-embeds on every startup
+./gradlew run --console=plain
+
+# Persistent — embeddings survive restarts
+VECTOR_STORE=qdrant ./gradlew run --console=plain
+```
+
+### Inspecting Qdrant from the terminal
+
+Once Qdrant is running (`docker compose up -d`) you can query it directly with `curl`:
+
+```bash
+# List all collections
+curl -s http://localhost:6333/collections | jq
+
+# Check the movie_recommender collection
+curl -s http://localhost:6333/collections/movie_recommender | jq
+
+# Browse all indexed points (payloads only, no vectors)
+curl -s -X POST http://localhost:6333/collections/movie_recommender/points/scroll \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 100, "with_payload": true, "with_vector": false}' | jq
+```
+
+> **`jq` not installed?** `brew install jq`. Without it, pipe to `python3 -m json.tool` instead.
+
+Qdrant also ships with a built-in web UI — open **http://localhost:6333/dashboard** in a browser to browse collections, inspect points, and run queries interactively.
 
 ---
 
@@ -247,23 +291,24 @@ val items = Json.decodeFromString<List<MediaItem>>(
 store.indexAll(items)
 ```
 
-### Persist embeddings to disk
-Avoid re-embedding on every startup by saving after indexing:
+### Use the persistent Qdrant backend
 
-```kotlin
-// Save
-File("embeddings.json").writeText(Json.encodeToString(store.chunks))
+The in-memory store re-embeds the catalogue (~5–10s) on every startup. To persist embeddings across restarts:
 
-// Load
-val saved = Json.decodeFromString<List<EmbeddedChunk>>(File("embeddings.json").readText())
-store.loadFromDisk(saved)  // add this method to VectorStore
+```bash
+# 1. Start Qdrant
+docker compose up -d
+
+# 2. Run with persistent store
+VECTOR_STORE=qdrant ./gradlew run --console=plain
 ```
 
-### Swap in a production vector database
-Replace `VectorStore` with a client for [Chroma](https://www.trychroma.com/),
-[pgvector](https://github.com/pgvector/pgvector), or [Qdrant](https://qdrant.tech/).
-The `RagEngine` only calls `store.search()` — so swapping the store requires
-no changes to the RAG logic.
+On the first run all items are embedded and stored in Qdrant. On subsequent runs, unchanged items are skipped — startup takes under a second.
+
+To stop Qdrant and remove its data volume:
+```bash
+docker compose down -v
+```
 
 ### Enable streaming responses
 In `OllamaClient`, set `stream = true` in `ChatRequest` and consume the
@@ -324,8 +369,29 @@ A score above ~0.80 is a strong match; below ~0.60 is likely a weak one.
 
 ## Troubleshooting
 
-**`Connection refused` on startup**
+**`Connection refused` on startup (in-memory mode)**
 Ollama isn't running. Start it with `ollama serve`.
+
+**`Connection refused` on startup (Qdrant mode)**
+Either Ollama or Qdrant isn't running. Check both:
+```bash
+curl -s http://localhost:11434   # should print "Ollama is running"
+curl -s http://localhost:6333/collections   # should return a JSON result
+```
+If Qdrant isn't up:
+```bash
+docker compose up -d
+```
+If Ollama isn't responding despite `ollama serve` erroring with "address already in use", something else may be on port 11434:
+```bash
+lsof -i :11434   # check what process is listening
+```
+
+**`listen tcp 127.0.0.1:11434: bind: address already in use`**
+Ollama is already running — you don't need to start it again. If you want to stop it:
+```bash
+pkill ollama
+```
 
 **`model not found` error**
 You haven't pulled the model yet. Run `ollama pull nomic-embed-text` and `ollama pull phi3`.

@@ -2,6 +2,9 @@ package com.rag
 
 import com.rag.ollama.OllamaClient
 import com.rag.rag.RagEngine
+import com.rag.store.HttpQdrantClient
+import com.rag.store.InMemoryVectorStore
+import com.rag.store.QdrantVectorStore
 import com.rag.store.VectorStore
 import kotlinx.coroutines.runBlocking
 
@@ -40,7 +43,16 @@ fun main() = runBlocking {
         chatModel  = "phi3"                // ollama pull phi3
     )
 
-    val store  = VectorStore(ollama)
+    val store: VectorStore = when (System.getenv("VECTOR_STORE")?.lowercase()) {
+        "qdrant" -> {
+            println("Vector store: Qdrant (persistent) — make sure `docker compose up -d` is running\n")
+            QdrantVectorStore(embed = { ollama.embed(it) }, qdrant = HttpQdrantClient())
+        }
+        else -> {
+            println("Vector store: in-memory (default) — set VECTOR_STORE=qdrant for persistence\n")
+            InMemoryVectorStore(ollama)
+        }
+    }
     val engine = RagEngine(store, ollama, topK = 4)
 
     // ── Index the knowledge base ───────────────────────────────────────────
@@ -54,6 +66,12 @@ fun main() = runBlocking {
         println("     ollama serve")
         println("     ollama pull nomic-embed-text")
         println("     ollama pull phi3")
+        if (System.getenv("VECTOR_STORE")?.lowercase() == "qdrant") {
+            println("   Using Qdrant — also check that Docker is running:")
+            println("     docker compose up -d")
+            println("     curl http://localhost:6333/collections   # should return a result")
+        }
+        store.close()
         ollama.close()
         return@runBlocking
     }
@@ -88,6 +106,7 @@ fun main() = runBlocking {
         println("\n${"─".repeat(60)}\n")
     }
 
+    store.close()
     ollama.close()
     println("Goodbye!")
 }
