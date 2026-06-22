@@ -2,6 +2,7 @@ package com.rag.store
 
 import com.rag.model.MediaItem
 import com.rag.model.SearchResult
+import java.security.MessageDigest
 import java.util.UUID
 
 /**
@@ -48,7 +49,7 @@ class QdrantVectorStore(
         itemRegistry[item.id] = item
 
         val pointId     = pointIdFor(item.id)
-        val contentHash = item.toEmbeddableText().hashCode().toString()
+        val contentHash = sha256Of(item.toEmbeddableText())
 
         // Skip re-embedding if the stored hash already matches
         if (qdrant.getPointHash(pointId) == contentHash) {
@@ -99,4 +100,16 @@ class QdrantVectorStore(
      */
     private fun pointIdFor(mediaId: String): String =
         UUID.nameUUIDFromBytes(mediaId.toByteArray()).toString()
+
+    /**
+     * Hex-encoded SHA-256 of [text], used as the cached-content signal in
+     * [index]. `String.hashCode()` is only 32 bits and collision-prone enough
+     * that two distinct texts could share a hash, causing a real content
+     * change to be skipped as "already indexed" — SHA-256 makes that
+     * practically impossible.
+     */
+    private fun sha256Of(text: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
 }

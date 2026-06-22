@@ -1,0 +1,33 @@
+name: CampaignFinances CI
+
+on:
+  push:
+    paths:
+      - "projects/ai/CampaignFinances/**"
+      - ".github/workflows/campaign-finances-ci.yml"
+  pull_request:
+    paths:
+      - "projects/ai/CampaignFinances/**"
+      - ".github/workflows/campaign-finances-ci.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: projects/ai/CampaignFinances
+
+jobs:
+  test:
+    name: Gradle tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # FecBulkIngestIntegrationTest starts a MySQL container via Testcontainers;
+      # ubuntu-latest runners have Docker preinstalled, so no extra setup is needed.
+      - name: Run tests
+        run: ./gradlew test --no-daemon

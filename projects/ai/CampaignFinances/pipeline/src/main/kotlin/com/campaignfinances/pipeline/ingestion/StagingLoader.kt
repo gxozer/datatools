@@ -68,7 +68,7 @@ class StagingLoader(private val connection: Connection) {
         val columns = type.stagingColumns.joinToString(", ")
         // The SET clause stamps provenance columns that are not in the file itself.
         val sql = """
-            LOAD DATA LOCAL INFILE '${tsv.toAbsolutePath().toString().replace("\\", "\\\\")}'
+            LOAD DATA LOCAL INFILE '${escapeSqlLiteral(tsv.toAbsolutePath().toString())}'
             INTO TABLE ${type.stagingTable}
             FIELDS TERMINATED BY '\t' ESCAPED BY '\\'
             LINES TERMINATED BY '\n'
@@ -82,6 +82,17 @@ class StagingLoader(private val connection: Connection) {
             return statement.executeUpdate().toLong()
         }
     }
+
+    /**
+     * Escapes a value for use inside a single-quoted SQL string literal:
+     * backslashes and single quotes both need doubling, or either one ends
+     * the literal early and corrupts the statement. The temp path comes from
+     * [Files.createTempFile] under the system temp dir, which on some systems
+     * is derived from the username — not arbitrary input, but not guaranteed
+     * quote-free either.
+     */
+    private fun escapeSqlLiteral(value: String): String =
+        value.replace("\\", "\\\\").replace("'", "\\'")
 
     /**
      * Escapes one field for the TSV: null becomes MySQL's `\N` (SQL NULL) and

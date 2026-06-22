@@ -9,6 +9,7 @@ import io.ktor.utils.io.jvm.javaio.copyTo
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.security.DigestOutputStream
 import java.security.MessageDigest
 import java.util.zip.ZipFile
@@ -93,14 +94,26 @@ class FecBulkDownloader(
     /**
      * Extracts the single `.txt` entry from [zip] to [target].
      * FEC bulk zips contain exactly one data file.
+     *
+     * Extraction writes to a `.partial` sibling first and only [Files.move]s it
+     * onto [target] once fully written. [fetch] treats any existing [target] as
+     * a valid cache hit, so without this, a run killed mid-extraction would
+     * leave a truncated `.txt` that later runs would reuse silently.
      */
     private fun unzipSingleTxt(zip: Path, target: Path) {
-        ZipFile(zip.toFile()).use { zipFile ->
-            val entry = zipFile.entries().asSequence().firstOrNull { it.name.endsWith(".txt") }
-                ?: error("no .txt entry found in ${zip.fileName}")
-            zipFile.getInputStream(entry).use { input ->
-                target.outputStream().buffered().use { output -> input.copyTo(output) }
+        val partial = target.resolveSibling("${target.fileName}.partial")
+        try {
+            ZipFile(zip.toFile()).use { zipFile ->
+                val entry = zipFile.entries().asSequence().firstOrNull { it.name.endsWith(".txt") }
+                    ?: error("no .txt entry found in ${zip.fileName}")
+                zipFile.getInputStream(entry).use { input ->
+                    partial.outputStream().buffered().use { output -> input.copyTo(output) }
+                }
             }
+            Files.move(partial, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (e: Exception) {
+            Files.deleteIfExists(partial)
+            throw e
         }
     }
 }
