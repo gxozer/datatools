@@ -14,12 +14,6 @@ class StubCommandsTest {
     }
 
     @Test
-    fun `ingest stub reports not implemented and exits 2`() {
-        val err = StringBuilder()
-        assertStubBehavior(IngestCommand(err), err)
-    }
-
-    @Test
     fun `dedup stub reports not implemented and exits 2`() {
         val err = StringBuilder()
         assertStubBehavior(DedupCommand(err), err)

@@ -20,15 +20,15 @@ A Kotlin batch pipeline that ingests FEC data for the 2025–2026 cycle into MyS
 | DB access | JDBC + jOOQ | Type-safe SQL for bulk-heavy workloads; avoids ORM overhead on 10M+ row inserts; full MySQL dialect support |
 | HTTP client | Ktor client | For api.open.fec.gov; Kotlin-native, easy rate-limit handling |
 | Testing | JUnit 5 + Testcontainers (MySQL) | Integration tests against a real MySQL, fixture FEC files in `src/test/resources` |
-| Runtime | CLI (`./gradlew run --args=...`) + Docker Compose for MySQL | No scheduler in Phase 1 |
+| Runtime | CLI (`./gradlew :pipeline:run --args="..."` from the project root) + Docker Compose for MySQL | No scheduler in Phase 1 |
 
 ## 3. Architecture
 
 ```
-                 ┌────────────────────────────────────────────────┐
-                 │                  Pipeline CLI                   │
-                 │  ingest --source=fec-bulk | fec-api  [--cycle]  │
-                 └────────────────────────────────────────────────┘
+                 ┌─────────────────────────────────────────────────────┐
+                 │                     Pipeline CLI                      │
+                 │  ingest --source=fec-bulk | fec-api  [--cycle] [--dir]│
+                 └─────────────────────────────────────────────────────┘
                           │                          │
                 ┌─────────▼─────────┐      ┌─────────▼─────────┐
                 │  FecBulkAdapter   │      │   FecApiAdapter   │
@@ -95,13 +95,15 @@ Conservative, deterministic, auditable — no probabilistic/ML matching in Phase
 
 ```
 CampaignFinances/
-  docs/
-  pipeline/                  # this phase
-    src/main/kotlin/...      # adapters, normalize, dedup, reconcile
-    src/test/kotlin/...
-    src/test/resources/fixtures/   # small real FEC file excerpts
-    db/migration/            # Flyway
+  settings.gradle.kts        # Gradle root — includes the pipeline subproject
+  gradlew, gradle/           # Gradle wrapper (run all builds from this root)
   docker-compose.yml         # MySQL 8.4
+  docs/
+  pipeline/                  # this phase (Gradle subproject)
+    src/main/kotlin/...      # adapters, normalize, dedup, reconcile
+    src/main/resources/db/migration/       # Flyway (V1–V11)
+    src/test/kotlin/...
+    src/test/resources/fixtures/fec-bulk/  # small real FEC file excerpts
 ```
 
 ## 9. Testing Strategy

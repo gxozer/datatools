@@ -16,10 +16,9 @@ This project uses **Jira** (via MCP) for issue tracking. Use the `mcp__jira__*` 
 ## Jira Workflow for AI Agents
 
 1. **Find ready work**: Query JQL for unassigned/open issues in your sprint or project
-2. **Transition to In Progress** when starting work
-3. **Comment** with a summary of what was done when finished
-4. **Transition to Done** on completion
-5. **Discovered new work?** Create a linked Jira issue
+2. **Comment** with a summary of what was done when finished
+3. **Discovered new work?** Create a linked Jira issue
+4. **Do NOT transition issues** (In Progress, Done, etc.) unless the user explicitly asks — they manage ticket status themselves
 
 ## Non-Interactive Shell Commands
 
@@ -49,23 +48,14 @@ cp -rf source dest          # NOT: cp -r source dest
 
 **When ending a work session**, complete ALL steps below.
 
-**MANDATORY WORKFLOW:**
+**WORKFLOW:**
 
 1. **File issues for remaining work** - Create Jira issues for anything that needs follow-up
 2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Transition finished work to Done, update in-progress items with comments
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+3. **Comment on in-progress tickets** summarizing what was done
+4. **Hand off** - Summarize what changed and what's left, so the user can pick up cleanly
 
 **CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+- **Never commit or push without explicit instruction from the user** — uncommitted/unpushed work at session end is expected, not a failure
+- **Never transition a Jira ticket's status** (In Progress, Done, etc.) without the user explicitly asking — they manage ticket status themselves
+- If the user does ask you to commit/push/transition, do exactly the scope they asked for — not more
