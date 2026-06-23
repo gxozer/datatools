@@ -35,13 +35,19 @@ class CanonicalLoaderTest {
     private lateinit var connection: Connection
     private lateinit var loader: CanonicalLoader
 
+    /**
+     * Migrates a fresh connection and wipes every pipeline table before each
+     * test. Required because the `@Container` MySQL instance is shared across
+     * all test methods in this class (started once, not per test) — without
+     * this, a row inserted by one test is still present when the next test
+     * runs, silently turning an idempotent upsert into a no-op and breaking
+     * that test's row-count assertions.
+     */
     @BeforeEach
     fun setUp() {
         val config = DbConfig(mysql.jdbcUrl, mysql.username, mysql.password)
         Migrator(config).migrate()
         connection = DriverManager.getConnection(config.url, config.user, config.password)
-        // The container is shared across all test methods (see TestDbSupport.kt) —
-        // each test must start from an empty schema.
         connection.truncateAllPipelineTables()
         loader = CanonicalLoader(connection)
     }

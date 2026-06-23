@@ -96,6 +96,14 @@ class FecBulkIngestIntegrationTest {
         }
     }
 
+    /**
+     * Runs the full `ingest()` (staging + canonical) twice against the same
+     * fixture files and asserts the canonical totals, uniqueness, and run
+     * status are identical on the second run — the cross-stage counterpart
+     * to [CanonicalLoaderTest]'s per-method idempotency tests, exercised
+     * through the real [FecBulkAdapter] entry point instead of [CanonicalLoader]
+     * directly.
+     */
     @Test
     fun `re-running the same ingest is idempotent on the canonical schema`() {
         val config = DbConfig(mysql.jdbcUrl, mysql.username, mysql.password)
