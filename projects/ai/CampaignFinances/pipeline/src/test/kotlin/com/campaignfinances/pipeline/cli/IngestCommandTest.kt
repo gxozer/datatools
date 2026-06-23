@@ -14,15 +14,16 @@ class IngestCommandTest {
     private fun command(
         out: StringBuilder = StringBuilder(),
         err: StringBuilder = StringBuilder(),
-        onIngest: BulkIngestRunner = BulkIngestRunner { _, _ -> IngestSummary(1, emptyMap()) },
-    ) = IngestCommand(onIngest, out, err)
+        onBulkIngest: BulkIngestRunner = BulkIngestRunner { _, _ -> IngestSummary(1, emptyMap()) },
+        onApiIngest: BulkIngestRunner = BulkIngestRunner { _, _ -> IngestSummary(1, emptyMap()) },
+    ) = IngestCommand(mapOf("fec-bulk" to { onBulkIngest }, "fec-api" to { onApiIngest }), out, err)
 
     @Test
     fun `fec-bulk runs the bulk ingest with default cycle and prints a summary`() {
         var seenCycle: Int? = null
         var seenDir: Path? = Path.of("sentinel")
         val out = StringBuilder()
-        val cmd = command(out = out, onIngest = BulkIngestRunner { cycle, dir ->
+        val cmd = command(out = out, onBulkIngest = BulkIngestRunner { cycle, dir ->
             seenCycle = cycle
             seenDir = dir
             IngestSummary(7, mapOf("cn" to FileCounts(3, 1)))
@@ -39,7 +40,7 @@ class IngestCommandTest {
     @Test
     fun `cycle and dir options are passed through`() {
         var seen: Pair<Int, Path?>? = null
-        val cmd = command(onIngest = BulkIngestRunner { cycle, dir ->
+        val cmd = command(onBulkIngest = BulkIngestRunner { cycle, dir ->
             seen = cycle to dir
             IngestSummary(1, emptyMap())
         })
@@ -63,10 +64,25 @@ class IngestCommandTest {
     }
 
     @Test
-    fun `fec-api is not implemented yet`() {
-        val err = StringBuilder()
-        assertEquals(2, command(err = err).run(listOf("--source=fec-api")))
-        assertContains(err.toString(), "not implemented")
+    fun `fec-api dispatches to its own runner, independent of fec-bulk`() {
+        var bulkCalled = false
+        var apiSeenCycle: Int? = null
+        val out = StringBuilder()
+        val cmd = command(
+            out = out,
+            onBulkIngest = BulkIngestRunner { _, _ -> bulkCalled = true; IngestSummary(1, emptyMap()) },
+            onApiIngest = BulkIngestRunner { cycle, _ ->
+                apiSeenCycle = cycle
+                IngestSummary(9, mapOf("indiv" to FileCounts(5, 0)))
+            },
+        )
+
+        val exitCode = cmd.run(listOf("--source=fec-api", "--cycle=2026"))
+
+        assertEquals(0, exitCode)
+        assertEquals(2026, apiSeenCycle)
+        assertEquals(false, bulkCalled, "fec-api must not invoke the fec-bulk runner")
+        assertContains(out.toString(), "ingest run 9 complete: 5 rows loaded, 0 bad rows skipped")
     }
 
     @Test

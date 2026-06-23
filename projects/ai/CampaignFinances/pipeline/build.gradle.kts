@@ -1,5 +1,6 @@
 plugins {
     kotlin("jvm") version "2.2.20"
+    kotlin("plugin.serialization") version "2.2.20"
     application
 }
 
@@ -21,12 +22,16 @@ dependencies {
     implementation("com.mysql:mysql-connector-j:9.3.0")
     implementation("io.ktor:ktor-client-core:3.1.3")
     implementation("io.ktor:ktor-client-cio:3.1.3")
+    implementation("io.ktor:ktor-client-content-negotiation:3.1.3")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.1.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("ch.qos.logback:logback-classic:1.5.18")
 
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")
     testImplementation("org.testcontainers:junit-jupiter:1.21.1")
     testImplementation("org.testcontainers:mysql:1.21.1")
+    testImplementation("io.ktor:ktor-client-mock:3.1.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

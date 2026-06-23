@@ -3,7 +3,7 @@
 **Epic:** [PR-144](https://mgozer.atlassian.net/browse/PR-144)
 **Parent docs:** [TDS_PHASE1.md](TDS_PHASE1.md) §9 (testing strategy, brief), [PROJECT_PLAN.md](PROJECT_PLAN.md)
 **Status:** Living document — updated as each Phase 1 ticket lands
-**Last updated:** 2026-06-23 (PR-171–PR-174 closed)
+**Last updated:** 2026-06-23 (PR-171–PR-175 closed; PR-155 implemented)
 
 This is the operational expansion of [TDS_PHASE1.md](TDS_PHASE1.md) §9: not just the testing *strategy* (unit/integration/reconciliation, stated briefly there), but a concrete inventory of what test coverage exists today, what's planned per ticket, and the gaps tracked between them. Phase 1 is the only phase implemented so far ([PROJECT_PLAN.md](PROJECT_PLAN.md) defines 7 phases total); this document will need a Phase 2 counterpart once that phase is designed.
 
@@ -18,21 +18,23 @@ This is the operational expansion of [TDS_PHASE1.md](TDS_PHASE1.md) §9: not jus
 | **End-to-end (in-process)** | Every pipeline stage chained together (ingest → dedup → summary rebuild → reconcile), still calling Kotlin classes in-process. | Not yet present — planned in **PR-159**. |
 | **End-to-end (subprocess)** | The actual CLI run as a separate process exactly as a user runs it, real env vars, real exit codes. | `CliSubprocessTest` (PR-174) — spawns `java -cp ... MainKt migrate`/`ingest` as a genuine child process against a real Testcontainers MySQL via `CF_DB_*` env vars. Distinct from PR-159's scope, which stays in-process per its ticket description. |
 
-## 2. Current test inventory (as of PR-174)
+## 2. Current test inventory (as of PR-155)
 
 | File | Type | Covers |
 |---|---|---|
 | `cli/CliTest.kt` | Unit | `Cli` dispatch: routes to the named command, usage-on-no-args, unknown-command exit code |
 | `cli/StubCommandsTest.kt` | Unit | `DedupCommand`/`ReconcileCommand` stubs exit 2 with "not implemented" — guards against accidentally shipping a stub as if it were real |
-| `cli/IngestCommandTest.kt` | Unit (fake collaborator) | `IngestCommand` option parsing (`--source`, `--cycle`, `--dir`) against a **fake** `BulkIngestRunner` — no real DB |
+| `cli/IngestCommandTest.kt` | Unit (fake collaborator) | `IngestCommand` option parsing (`--source`, `--cycle`, `--dir`) and per-source dispatch (`fec-bulk` vs `fec-api` route to independent fake runners) against **fakes** — no real DB, no real HTTP |
 | `cli/IngestCommandComponentTest.kt` | Component | The production `IngestCommand(dbConfig)` constructor against a real `FecBulkAdapter` + Testcontainers MySQL: real exit code, real printed summary line, real fixture-derived counts (PR-173) |
 | `db/DbConfigTest.kt` | Unit | `DbConfig.fromEnv()` defaults and env-var overrides |
 | `FlywayMigrationTest.kt` | Component | All migrations (V1–V12) apply cleanly to an empty DB; all 11 expected tables exist afterward |
 | `CliSubprocessTest.kt` | End-to-end (subprocess) | The built CLI run as a genuine child process (`migrate` then `ingest`) against real `CF_DB_*` env vars and a real Testcontainers MySQL (PR-174) |
 | `ingestion/FecBulkParserTest.kt` | Unit | Pure parsing logic for all 4 FEC bulk file types — good rows, malformed rows, negative amounts, oversized fields, blank dates |
+| `ingestion/FecApiClientTest.kt` | Unit (mocked HTTP) | `FecApiClient`: response/pagination parsing, `min_date`/keyset-cursor query params, 429 retry with `Retry-After`, retry exhaustion, and the proactive throttle between calls — no real network call (PR-155) |
 | `ingestion/CanonicalLoaderTest.kt` | Component | `CanonicalLoader`'s 4 upsert methods in isolation: idempotency (same run, re-invoked), **cross-run upserts with a corrected value (different `ingest_run_id`, PR-171)**, attribution non-filtering, unresolved-FK and blank-designation skip counting, donor_id preservation, NOT-NULL skip counting, affected-rows assumption, table-driven V12 generated-column normalization including a blank `contributor_name` |
 | `ingestion/CanonicalSchemaContractTest.kt` | Schema/contract | Table-driven `information_schema.columns` nullability assertions for every column on `candidate`, `committee`, `candidate_committee`, `contribution` (PR-172) |
 | `ingestion/FecBulkIngestIntegrationTest.kt` | Integration | Full `FecBulkAdapter.ingest()` against fixture files: staging load + canonical load + `ingest_run.row_counts`, end-to-end idempotency on re-run |
+| `ingestion/FecApiAdapterIntegrationTest.kt` | Integration | Full `FecApiAdapter.ingest()` against mocked HTTP + Testcontainers MySQL: staging + canonical population, watermark falling back to cycle-start on the first run, same-source idempotency, and the watermark advancing to the prior run's `finished_at` on a second run (PR-155) |
 | `ingestion/TestDbSupport.kt` | (test helper, not a test) | Shared `Connection.truncateAllPipelineTables()` / `queryLong()` / `queryString()` used by the Testcontainers-backed tests above |
 
 ## 3. Coverage by Phase 1 ticket
@@ -42,7 +44,7 @@ This is the operational expansion of [TDS_PHASE1.md](TDS_PHASE1.md) §9: not jus
 | PR-152 scaffolding | Done | CLI dispatch, `DbConfig`, stub commands, Flyway migration | `CliTest`, `StubCommandsTest`, `DbConfigTest`, `FlywayMigrationTest` — complete |
 | PR-153 bulk adapter | Done | Parser unit tests (all 4 file types, malformed rows); staging-load integration test | `FecBulkParserTest`, `FecBulkIngestIntegrationTest` (staging half) — complete |
 | **PR-154 normalize/load** | Done | Table-driven normalization + attribution-logic unit tests; canonical population + idempotency | `CanonicalLoaderTest`, `FecBulkIngestIntegrationTest` (canonical half) — complete; follow-up gaps from review closed via PR-171–PR-174 (§4) |
-| PR-155 FEC API adapter | Not started | Mocked-HTTP unit tests (response parsing, pagination, watermark logic), cross-source idempotency integration test | None yet — ticket not started |
+| **PR-155 FEC API adapter** | Done | Mocked-HTTP unit tests (response parsing, pagination, watermark logic), cross-source idempotency integration test | `FecApiClientTest`, `FecApiAdapterIntegrationTest`, `IngestCommandTest` (fec-api dispatch) — complete; "cross-source idempotency" scoped to same-source (fec-api-on-fec-api) only, see §4 |
 | PR-156 donor dedup | Not started | Table-driven normalization rules **and near-miss cases that must NOT merge**; audit-completeness check (`donor_link` count = linked-contribution count); determinism (re-run = identical) | None yet — depends on PR-154's `normalized_name`/`zip5` columns, which exist |
 | PR-157 ranking tables | Not started | Ranking/breakdown integration tests; concurrent-read-during-rebuild test (atomic `RENAME TABLE` swap) | None yet |
 | PR-158 reconciliation | Not started | Comparison/tolerance unit tests; fixture-based reconciliation test (known inputs → known results) | None yet |
@@ -64,6 +66,9 @@ All "idempotent on re-run" tests originally called the same loader method twice 
 
 ### [PR-174](https://mgozer.atlassian.net/browse/PR-174): True end-to-end subprocess test — closed
 `CliSubprocessTest` spawns the built CLI as a genuine `java` child process (`migrate` then `ingest`) with real `CF_DB_*` env vars against a real Testcontainers MySQL — the one tier that exercises `Main.kt`'s `exitProcess()` and real env-var wiring, distinct from PR-159's in-process cross-stage e2e suite.
+
+### PR-155: cross-source dedup is a known, deliberately scoped gap
+`FecApiAdapter` writes `staging_contribution`/`contribution.source = "fec-api"`; `FecBulkAdapter` writes `"fec-bulk"`. `CanonicalLoader.loadContributions` is reused unchanged and copies `source` straight from staging into canonical, so `UNIQUE(source, source_record_id)` only dedupes *within* one source, not across them. An FEC-amended record republished via the API under the same `sub_id` that bulk already loaded will create a second canonical row (double-counted in rankings) rather than updating the existing one. Considered and rejected: unifying the `source` value (touches the already-shipped `FecBulkAdapter` provenance constant) and an adapter-level pre-check against the other source (extra complexity, breaks "reuse PR-154 unchanged"). Decision: ship as-is, document the limitation here, and defer catching it to PR-158's reconciliation report (which compares aggregate totals against FEC's published numbers and would surface a double-count as a discrepancy). `FecApiAdapterIntegrationTest`'s idempotency test proves same-source (`fec-api` re-run) dedup only — it does not claim to prove cross-source dedup, and no test here should be read as claiming otherwise.
 
 ### Deliberately not planned
 - **Live volume/timing run** (50–80M real rows, <2h target per [TDS_PHASE1.md](TDS_PHASE1.md) §7) — too slow/heavy to run on every change; stays a manual verification step (see PR-154/PR-160 verification steps), not part of the automated suite.
