@@ -20,6 +20,7 @@ A website (web, iOS, Android) showing who raises and who donates campaign money 
 | [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | 7 phases, each gated on a live demo |
 | [docs/PRD_PHASE1.md](docs/PRD_PHASE1.md) | Phase 1 requirements: FEC data pipeline proof |
 | [docs/TDS_PHASE1.md](docs/TDS_PHASE1.md) | Phase 1 technical design (Kotlin, MySQL 8.4, adapters) |
+| [docs/TEST_PLAN_PHASE1.md](docs/TEST_PLAN_PHASE1.md) | Phase 1 test plan: coverage by ticket, current inventory, known gaps |
 | [docs/DEBUGGING_INTELLIJ.md](docs/DEBUGGING_INTELLIJ.md) | Debugging the pipeline in IntelliJ (CLI, tests, Testcontainers, DB) |
 
 ## Tech stack
@@ -37,7 +38,7 @@ Prerequisites: JDK 21+, Docker Desktop running, host port 3307 free.
 docker compose up -d --wait
 
 # apply schema migrations
-./gradlew :pipeline:flywayMigrate   # expect: "Applied 11 migration(s)" on first run
+./gradlew :pipeline:flywayMigrate   # expect: "Applied 12 migration(s)" on first run
 
 # run the test suite (uses its own throwaway Testcontainers MySQL)
 ./gradlew test
@@ -65,13 +66,13 @@ CampaignFinances/
     │   ├── Main.kt             # CLI entry point
     │   ├── cli/                # Command interface + one class per command
     │   └── db/                 # DbConfig, Migrator
-    ├── src/main/resources/db/migration/   # Flyway SQL migrations (V1–V11)
+    ├── src/main/resources/db/migration/   # Flyway SQL migrations (V1–V12)
     └── src/test/kotlin/        # unit + Testcontainers integration tests
 ```
 
 ## Development workflow
 
-Per [PR-134](https://mgozer.atlassian.net/browse/PR-134): every piece of work has a Jira ticket under the epic; PRD/TDS precede implementation; every ticket ships with its tests; each phase ends with a live demo (see PROJECT_PLAN.md). Phase 1 implementation tickets: PR-152 (done) → PR-153–PR-160.
+Per [PR-134](https://mgozer.atlassian.net/browse/PR-134): every piece of work has a Jira ticket under the epic; PRD/TDS precede implementation; every ticket ships with its tests; each phase ends with a live demo (see PROJECT_PLAN.md). Phase 1 implementation tickets: PR-152, PR-153, PR-154 (done) → PR-156–PR-160.
 
 ### Conventions
 

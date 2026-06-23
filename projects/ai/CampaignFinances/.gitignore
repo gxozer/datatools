@@ -6,6 +6,9 @@
 .gradle/
 build/
 
+# Kotlin
+.kotlin/
+
 # secrets (FEC_API_KEY etc.)
 .env
 .env.*
