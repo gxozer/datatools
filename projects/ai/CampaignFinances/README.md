@@ -20,6 +20,7 @@ A website (web, iOS, Android) showing who raises and who donates campaign money 
 | [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | 7 phases, each gated on a live demo |
 | [docs/PRD_PHASE1.md](docs/PRD_PHASE1.md) | Phase 1 requirements: FEC data pipeline proof |
 | [docs/TDS_PHASE1.md](docs/TDS_PHASE1.md) | Phase 1 technical design (Kotlin, MySQL 8.4, adapters) |
+| [docs/TEST_PLAN_PHASE1.md](docs/TEST_PLAN_PHASE1.md) | Phase 1 test plan: coverage by ticket, current inventory, known gaps |
 | [docs/DEBUGGING_INTELLIJ.md](docs/DEBUGGING_INTELLIJ.md) | Debugging the pipeline in IntelliJ (CLI, tests, Testcontainers, DB) |
 
 ## Tech stack

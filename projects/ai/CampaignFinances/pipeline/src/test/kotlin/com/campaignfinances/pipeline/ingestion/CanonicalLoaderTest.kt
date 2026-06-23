@@ -64,6 +64,29 @@ class CanonicalLoaderTest {
     }
 
     @Test
+    fun `loadCandidates reports an unchanged row as loaded, not bad, on re-run`() {
+        // Pins an assumption loadCandidates relies on but doesn't enforce:
+        // `ON DUPLICATE KEY UPDATE`'s affected-rows count must report 1 for a
+        // *matched* row even when no column value actually changed (MySQL
+        // Connector/J's default "found rows" reporting, not MySQL's native
+        // 0=unchanged/1=inserted/2=updated affected-rows mode). `loadCandidates`
+        // derives `bad = total - loaded`, so if a future driver upgrade or a
+        // `useAffectedRows=true` JDBC URL parameter ever flips this default,
+        // every idempotent re-run would silently start reporting `bad` rows
+        // that aren't actually bad — same reasoning as the KDoc on
+        // [CanonicalLoader.loadContributions]. If this test ever fails, that's
+        // the first place to look, not a bug in the upsert SQL itself.
+        val runId = IngestRunRepository.start(connection, "fec-bulk")
+        insertStagingCandidate(runId, "H6CA34245", "LIEU, TED", "H", "DEM", "CA", "36")
+        loader.loadCandidates(runId)
+
+        // Re-run with byte-for-byte identical staging data — nothing changed.
+        val second = loader.loadCandidates(runId)
+
+        assertEquals(FileCounts(loaded = 1, bad = 0), second)
+    }
+
+    @Test
     fun `loadCandidates skips and counts a staging row with a blank name or office instead of failing the run`() {
         val runId = IngestRunRepository.start(connection, "fec-bulk")
         // Real FEC bulk files do contain candidates with a blank CAND_NAME or
@@ -80,6 +103,26 @@ class CanonicalLoaderTest {
         assertEquals(1, connection.queryLong("SELECT COUNT(*) FROM candidate WHERE fec_candidate_id = 'S6TX99999'"))
     }
 
+    @Test
+    fun `loadCandidates updates the canonical row when a later, separate run has a corrected name`() {
+        // Distinct from the idempotency test above: this uses two genuinely
+        // separate ingest_run_ids (the real-world shape — every ingest() call
+        // gets a fresh run id), not the same loader call re-invoked with the
+        // same run id. Mirrors FEC republishing a corrected candidate name.
+        val firstRunId = IngestRunRepository.start(connection, "fec-bulk")
+        insertStagingCandidate(firstRunId, "H6CA34245", "LIEU, T.", "H", "DEM", "CA", "36")
+        loader.loadCandidates(firstRunId)
+        assertEquals("LIEU, T.", connection.queryString("SELECT name FROM candidate WHERE fec_candidate_id = 'H6CA34245'"))
+
+        val secondRunId = IngestRunRepository.start(connection, "fec-bulk")
+        insertStagingCandidate(secondRunId, "H6CA34245", "LIEU, TED", "H", "DEM", "CA", "36")
+        val counts = loader.loadCandidates(secondRunId)
+
+        assertEquals(FileCounts(loaded = 1, bad = 0), counts)
+        assertEquals(1, connection.queryLong("SELECT COUNT(*) FROM candidate"), "must update in place, not duplicate")
+        assertEquals("LIEU, TED", connection.queryString("SELECT name FROM candidate WHERE fec_candidate_id = 'H6CA34245'"))
+    }
+
     // --- committee ---
 
     @Test
@@ -93,6 +136,22 @@ class CanonicalLoaderTest {
 
         loader.loadCommittees(runId)
         assertEquals(1, connection.queryLong("SELECT COUNT(*) FROM committee"))
+    }
+
+    @Test
+    fun `loadCommittees updates the canonical row when a later, separate run has a corrected name`() {
+        val firstRunId = IngestRunRepository.start(connection, "fec-bulk")
+        insertStagingCommittee(firstRunId, "C00386987", "TED LIEU FOR CONGRSS", "H", "P")
+        loader.loadCommittees(firstRunId)
+        assertEquals("TED LIEU FOR CONGRSS", connection.queryString("SELECT name FROM committee WHERE fec_committee_id = 'C00386987'"))
+
+        val secondRunId = IngestRunRepository.start(connection, "fec-bulk")
+        insertStagingCommittee(secondRunId, "C00386987", "TED LIEU FOR CONGRESS", "H", "P")
+        val counts = loader.loadCommittees(secondRunId)
+
+        assertEquals(FileCounts(loaded = 1, bad = 0), counts)
+        assertEquals(1, connection.queryLong("SELECT COUNT(*) FROM committee"), "must update in place, not duplicate")
+        assertEquals("TED LIEU FOR CONGRESS", connection.queryString("SELECT name FROM committee WHERE fec_committee_id = 'C00386987'"))
     }
 
     // --- candidate_committee (attribution) ---
@@ -131,6 +190,24 @@ class CanonicalLoaderTest {
         loader.loadCommittees(runId)
         // No candidate H6CA34245 was ever loaded into `candidate`.
         insertStagingLinkage(runId, "H6CA34245", "C00386987", "P")
+
+        val counts = loader.loadCandidateCommittees(runId)
+        assertEquals(FileCounts(loaded = 0, bad = 1), counts)
+        assertEquals(0, connection.queryLong("SELECT COUNT(*) FROM candidate_committee"))
+    }
+
+    @Test
+    fun `loadCandidateCommittees skips and counts a linkage row with a blank designation`() {
+        // Candidate and committee both resolve, but cmte_dsgn itself is blank
+        // — a different failure mode than an unresolved FK, currently counted
+        // under the same `bad` bucket (see CanonicalLoader.loadCandidateCommittees
+        // KDoc; not planned to be split out, just pinned here).
+        val runId = IngestRunRepository.start(connection, "fec-bulk")
+        insertStagingCandidate(runId, "H6CA34245", "LIEU, TED", "H", "DEM", "CA", "36")
+        insertStagingCommittee(runId, "C00386987", "TED LIEU FOR CONGRESS", "H", "P")
+        loader.loadCandidates(runId)
+        loader.loadCommittees(runId)
+        insertStagingLinkage(runId, "H6CA34245", "C00386987", designation = null)
 
         val counts = loader.loadCandidateCommittees(runId)
         assertEquals(FileCounts(loaded = 0, bad = 1), counts)
@@ -195,6 +272,32 @@ class CanonicalLoaderTest {
         assertNull(connection.queryString("SELECT contribution_date FROM contribution WHERE source_record_id = '4041520261234567891'"))
     }
 
+    @Test
+    fun `loadContributions updates amount and contribution_date when a later, separate run has corrected data`() {
+        // Mirrors FEC reissuing a corrected bulk file for the same sub_id —
+        // two genuinely separate ingest_run_ids, not the same run re-invoked.
+        val committeeRunId = IngestRunRepository.start(connection, "fec-bulk")
+        insertStagingCommittee(committeeRunId, "C00386987", "TED LIEU FOR CONGRESS", "H", "P")
+        loader.loadCommittees(committeeRunId)
+
+        val firstRunId = IngestRunRepository.start(connection, "fec-bulk")
+        insertStagingContribution(firstRunId, "4041520261234567890", "C00386987", "100.00", "03152026")
+        loader.loadContributions(firstRunId)
+        assertEquals("100.00", connection.queryString("SELECT amount FROM contribution WHERE source_record_id = '4041520261234567890'"))
+
+        val secondRunId = IngestRunRepository.start(connection, "fec-bulk")
+        insertStagingContribution(secondRunId, "4041520261234567890", "C00386987", "150.00", "03162026")
+        val counts = loader.loadContributions(secondRunId)
+
+        assertEquals(FileCounts(loaded = 1, bad = 0), counts)
+        assertEquals(1, connection.queryLong("SELECT COUNT(*) FROM contribution"), "must update in place, not duplicate")
+        assertEquals("150.00", connection.queryString("SELECT amount FROM contribution WHERE source_record_id = '4041520261234567890'"))
+        assertEquals(
+            "2026-03-16",
+            connection.queryString("SELECT contribution_date FROM contribution WHERE source_record_id = '4041520261234567890'"),
+        )
+    }
+
     // --- donor-match normalization columns (V12) ---
 
     /**
@@ -242,6 +345,25 @@ class CanonicalLoaderTest {
         )
     }
 
+    @Test
+    fun `donor-match generated columns tolerate a blank contributor_name`() {
+        // Real FEC contribution rows can have a blank NAME field too (the
+        // parser nulls it, same as CAND_NAME); normalized_name isn't NOT NULL
+        // so this must not throw — same bug class as the candidate.name fix.
+        val runId = IngestRunRepository.start(connection, "fec-bulk")
+        insertStagingContribution(
+            runId,
+            subId = "4041520260000000002",
+            cmteId = "C00386987",
+            amount = "1.00",
+            transactionDt = "01012026",
+            contributorName = null,
+        )
+
+        assertNull(connection.queryString("SELECT normalized_name FROM staging_contribution WHERE sub_id = '4041520260000000002'"))
+        assertEquals("90012", connection.queryString("SELECT zip5 FROM staging_contribution WHERE sub_id = '4041520260000000002'"))
+    }
+
     // --- test helpers ---
 
     private fun insertStagingCandidate(
@@ -284,7 +406,7 @@ class CanonicalLoaderTest {
         }
     }
 
-    private fun insertStagingLinkage(runId: Long, candId: String, cmteId: String, designation: String) {
+    private fun insertStagingLinkage(runId: Long, candId: String, cmteId: String, designation: String?) {
         connection.prepareStatement(
             "INSERT INTO staging_linkage (cand_id, cmte_id, cmte_dsgn, source, ingest_run_id) VALUES (?, ?, ?, 'fec-bulk', ?)",
         ).use { statement ->
@@ -302,7 +424,7 @@ class CanonicalLoaderTest {
         cmteId: String,
         amount: String,
         transactionDt: String?,
-        contributorName: String = "DOE, JANE",
+        contributorName: String? = "DOE, JANE",
         zipCode: String = "900121234",
     ) {
         connection.prepareStatement(
