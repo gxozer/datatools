@@ -101,7 +101,7 @@ CampaignFinances/
   docs/
   pipeline/                  # this phase (Gradle subproject)
     src/main/kotlin/...      # adapters, normalize, dedup, reconcile
-    src/main/resources/db/migration/       # Flyway (V1–V11)
+    src/main/resources/db/migration/       # Flyway (V1–V12)
     src/test/kotlin/...
     src/test/resources/fixtures/fec-bulk/  # small real FEC file excerpts
 ```

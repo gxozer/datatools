@@ -1,0 +1,2 @@
+# OS litter — matches at every directory depth, not just inside project folders
+.DS_Store

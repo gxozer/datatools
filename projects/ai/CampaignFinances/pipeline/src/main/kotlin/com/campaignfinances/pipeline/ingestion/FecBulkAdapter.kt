@@ -21,8 +21,11 @@ data class IngestSummary(val runId: Long, val files: Map<String, FileCounts>)
  * `localDir` for tests/offline runs), parses every line, truncates the staging
  * table, and bulk-loads the good rows. Malformed rows are tolerated, logged
  * (first few per file), and counted into `ingest_run.row_counts` — they never
- * fail the run. Any *exception* (network, database) marks the run FAILED and
- * rethrows.
+ * fail the run. Once all four staging tables are loaded, [CanonicalLoader]
+ * normalizes them into the canonical schema (docs/TDS_PHASE1.md §4) in the
+ * same run, and its per-stage counts are merged into the same
+ * `ingest_run.row_counts`. Any *exception* (network, database) marks the run
+ * FAILED and rethrows.
  *
  * Reference timing: the full 2026 cycle (25.3M rows incl. a 1.7 GB download)
  * loads in ~7 minutes on a dev laptop (PR-153).
@@ -58,24 +61,49 @@ class FecBulkAdapter(
         connect().use { connection ->
             val runId = IngestRunRepository.start(connection, SOURCE)
             // LinkedHashMap keeps files in processing order in the JSON output.
-            val counts = LinkedHashMap<String, FileCounts>()
+            // File-stage counts (cn/cm/ccl/indiv) are kept separate from canonical
+            // counts so IngestSummary.files keeps reporting only the bulk-file
+            // stage, exactly as it did before canonical loading existed.
+            val fileCounts = LinkedHashMap<String, FileCounts>()
+            val canonicalCounts = LinkedHashMap<String, FileCounts>()
             try {
                 // Files are loaded one at a time, in FecBulkFileType.entries order;
-                // `counts` accumulates as each one finishes so that if a later file
-                // fails, the catch block below can still report what did succeed.
+                // `fileCounts` accumulates as each one finishes so that if a later
+                // file fails, the catch block below can still report what did succeed.
                 for (type in FecBulkFileType.entries) {
                     val txt = localDir?.resolve(type.txtName) ?: downloader.fetch(cycle, type)
-                    counts[type.key] = loadFile(connection, type, txt, runId)
+                    fileCounts[type.key] = loadFile(connection, type, txt, runId)
                 }
-                IngestRunRepository.finish(connection, runId, "SUCCESS", counts)
-                return IngestSummary(runId, counts)
+                // Staging is fully loaded — normalize it into the canonical schema
+                // (docs/TDS_PHASE1.md §4) before marking the run SUCCESS, so a
+                // failure here still rolls into ingest_run as a FAILED run rather
+                // than silently leaving staging un-normalized.
+                loadCanonical(connection, runId, canonicalCounts)
+                IngestRunRepository.finish(connection, runId, "SUCCESS", fileCounts + canonicalCounts)
+                return IngestSummary(runId, fileCounts)
             } catch (e: Exception) {
                 // Record whatever was completed before the failure, then rethrow so
                 // the caller (CLI) sees the error and exits non-zero.
-                IngestRunRepository.finish(connection, runId, "FAILED", counts)
+                IngestRunRepository.finish(connection, runId, "FAILED", fileCounts + canonicalCounts)
                 throw e
             }
         }
+    }
+
+    /**
+     * Runs [CanonicalLoader] over this run's staging rows and writes its
+     * per-stage counts into [canonicalCounts], keyed by canonical table name
+     * (`candidate`, `committee`, `candidate_committee`, `contribution`) —
+     * distinct from the bulk file keys (`cn`, `cm`, `ccl`, `indiv`). Order
+     * matters: candidates and committees must land before the tables that
+     * reference them by surrogate key.
+     */
+    private fun loadCanonical(connection: Connection, runId: Long, canonicalCounts: LinkedHashMap<String, FileCounts>) {
+        val canonical = CanonicalLoader(connection)
+        canonicalCounts["candidate"] = canonical.loadCandidates(runId)
+        canonicalCounts["committee"] = canonical.loadCommittees(runId)
+        canonicalCounts["candidate_committee"] = canonical.loadCandidateCommittees(runId)
+        canonicalCounts["contribution"] = canonical.loadContributions(runId)
     }
 
     /**
