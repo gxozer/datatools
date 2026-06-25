@@ -75,6 +75,28 @@ object IngestRunRepository {
     }
 
     /**
+     * Returns the `finished_at` date of the most recent successful run for
+     * [source], formatted `yyyy-MM-dd` (via `DATE_FORMAT` on the DB side so
+     * the result does not depend on the JVM's default timezone matching the DB
+     * session's timezone — PR-182), or null if no successful run exists yet.
+     *
+     * @param connection an open connection; not closed by this method
+     * @param source the adapter's source label, e.g. `"fec-api"`
+     * @return the watermark date string, or null on first run
+     */
+    fun latestSuccessfulFinishedAt(connection: Connection, source: String): String? {
+        connection.prepareStatement(
+            "SELECT DATE_FORMAT(MAX(finished_at), '%Y-%m-%d') FROM ingest_run WHERE source = ? AND status = 'SUCCESS'",
+        ).use { statement ->
+            statement.setString(1, source)
+            statement.executeQuery().use { rs ->
+                rs.next()
+                return rs.getString(1)
+            }
+        }
+    }
+
+    /**
      * Renders counts as a JSON object by hand, e.g.
      * `{"cn":{"loaded":8037,"bad":0},...}`. Keys are FEC file keys and values
      * are plain numbers, so no escaping is needed — not worth a JSON library

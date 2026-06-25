@@ -39,6 +39,9 @@ class IngestCommand(
      * Production wiring: `fec-bulk` goes through [FecBulkAdapter], `fec-api`
      * through [FecApiAdapter] (reading [FecApiConfig.fromEnv] lazily, only if
      * selected). Tests use the primary constructor with fakes instead.
+     * @param dbConfig connection settings passed through to whichever adapter is selected
+     * @param out where progress and the final summary are printed
+     * @param err where usage errors are printed
      */
     constructor(dbConfig: DbConfig, out: Appendable = System.out, err: Appendable = System.err) : this(
         runners = mapOf(
@@ -54,6 +57,7 @@ class IngestCommand(
 
     /**
      * Parses options, validates them, and dispatches to the selected source.
+     * @param args the raw `--key=value` arguments following `ingest`
      * @return 0 on success, 2 on any usage error (bad/missing/unknown option)
      */
     override fun run(args: List<String>): Int {
@@ -83,6 +87,10 @@ class IngestCommand(
     /**
      * Runs the selected source's ingest and prints a one-line summary with
      * the run id and the totals across all of that source's files.
+     * @param runner the adapter to run, already selected for this `--source`
+     * @param cycle the election cycle to pass through to [runner]
+     * @param localDir the local fixture/extract directory to pass through to [runner], if any
+     * @return 0 (this path always succeeds or throws; usage errors return earlier)
      */
     private fun runIngest(runner: BulkIngestRunner, cycle: Int, localDir: Path?): Int {
         val summary = runner.ingest(cycle, localDir)
@@ -92,7 +100,11 @@ class IngestCommand(
         return 0
     }
 
-    /** Prints the message to stderr and returns the usage-error exit code. */
+    /**
+     * Prints the message to stderr and returns the usage-error exit code.
+     * @param message the usage error to print
+     * @return 2, this command's usage-error exit code
+     */
     private fun usageError(message: String): Int {
         err.appendLine(message)
         return 2
@@ -101,6 +113,8 @@ class IngestCommand(
     /**
      * Converts `--key=value` arguments to a key/value map.
      * Arguments not in that form (no `--` prefix, or no `=`) are ignored.
+     * @param args the raw arguments following `ingest`
+     * @return a map of option name to value, for every `--key=value` argument found
      */
     private fun parseOptions(args: List<String>): Map<String, String> {
         val options = mutableMapOf<String, String>()

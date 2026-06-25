@@ -15,6 +15,7 @@ data class FecApiConfig(val apiKey: String) {
         /**
          * @param env the environment map; injectable so tests can pass a plain
          *   map instead of mutating real process state
+         * @return the config holding `FEC_API_KEY`'s value
          * @throws IllegalStateException if `FEC_API_KEY` is not set — unlike
          *   [com.campaignfinances.pipeline.db.DbConfig], there is no safe local
          *   default for a real secret

@@ -1,5 +1,8 @@
 package com.campaignfinances.pipeline.db
 
+import java.sql.Connection
+import java.sql.DriverManager
+
 /**
  * Database connection settings for the pipeline.
  *
@@ -27,6 +30,16 @@ data class DbConfig(
      */
     val urlWithLocalInfile: String
         get() = url + (if ('?' in url) "&" else "?") + "allowLoadLocalInfile=true"
+
+    /**
+     * Opens a standard JDBC connection using [url].
+     *
+     * For bulk loads that need `LOAD DATA LOCAL INFILE` use [urlWithLocalInfile]
+     * directly (see [com.campaignfinances.pipeline.ingestion.FecBulkAdapter]).
+     *
+     * @return a new open [Connection]
+     */
+    fun openConnection(): Connection = DriverManager.getConnection(url, user, password)
 
     companion object {
         /**

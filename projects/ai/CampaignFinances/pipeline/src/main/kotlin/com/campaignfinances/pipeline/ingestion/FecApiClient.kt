@@ -28,7 +28,9 @@ import kotlinx.coroutines.delay
  *   inject a `MockEngine`-backed client instead of a real network call
  * @param apiKey sent as the `api_key` query parameter on every request
  * @param baseUrl overridable for tests
- * @param minIntervalMillis minimum spacing enforced between consecutive calls
+ * @param minIntervalMillis minimum spacing enforced between consecutive calls.
+ *   Default leaves headroom under the 1,000/hour limit (PR-185) rather than
+ *   pacing at exactly the limit with zero margin for clock drift or retries.
  * @param maxRetries how many 429 retries one page tolerates before giving up
  * @param sleep injected delay function so tests don't actually wait through
  *   throttling or backoff
@@ -38,7 +40,7 @@ class FecApiClient(
     private val httpClient: HttpClient,
     private val apiKey: String,
     private val baseUrl: String = "https://api.open.fec.gov/v1/schedules/schedule_a/",
-    private val minIntervalMillis: Long = 3_600_000L / 1_000,
+    private val minIntervalMillis: Long = 4_000L,
     private val maxRetries: Int = 5,
     private val sleep: suspend (Long) -> Unit = { delay(it) },
     private val now: () -> Long = System::currentTimeMillis,
@@ -51,6 +53,7 @@ class FecApiClient(
      *
      * @param minDate the watermark, formatted `YYYY-MM-DD`
      * @param cursor the previous page's [LastIndexes], or null to request the first page
+     * @return the parsed page of results and pagination metadata
      */
     suspend fun fetchPage(minDate: String, cursor: LastIndexes?): ScheduleAResponse {
         throttle()
