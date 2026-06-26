@@ -2,6 +2,8 @@ package com.campaignfinances.pipeline.cli
 
 import com.campaignfinances.pipeline.db.DbConfig
 import com.campaignfinances.pipeline.ingestion.BulkIngestRunner
+import com.campaignfinances.pipeline.ingestion.FecApiAdapter
+import com.campaignfinances.pipeline.ingestion.FecApiConfig
 import com.campaignfinances.pipeline.ingestion.FecBulkAdapter
 import com.campaignfinances.pipeline.ingestion.FecBulkDownloader
 import java.nio.file.Path
@@ -11,31 +13,41 @@ import java.nio.file.Path
  *
  * Options (all `--key=value` form):
  * - `--source=fec-bulk|fec-api` (required) — which adapter to use.
- *   `fec-api` is pending PR-155 and currently exits 2.
  * - `--cycle=<year>` (optional, default 2026) — the two-year federal election
  *   cycle to load (e.g. 2026 covers 2025–2026).
- * - `--dir=<path>` (optional) — read pre-downloaded/extracted `.txt` files from
- *   this directory instead of downloading from fec.gov. Used by tests and
- *   offline runs; point it at `pipeline/src/test/resources/fixtures/fec-bulk`
- *   for a fast small-data run.
+ * - `--dir=<path>` (optional, `fec-bulk` only) — read pre-downloaded/extracted
+ *   `.txt` files from this directory instead of downloading from fec.gov.
+ *   Used by tests and offline runs; point it at
+ *   `pipeline/src/test/resources/fixtures/fec-bulk` for a fast small-data run.
+ *   Ignored by `fec-api`, which has no local files.
  *
- * @param bulkIngest the ingest implementation behind the `fec-bulk` source;
- *   an interface so tests can verify argument parsing with a fake
+ * @param runners which [BulkIngestRunner] to build for each `--source`
+ *   value, keyed by that value. A *supplier* rather than a built instance, so
+ *   constructing one source's adapter (e.g. reading `FEC_API_KEY`) only
+ *   happens if that source is actually selected — `pipeline ingest
+ *   --source=fec-bulk` must not fail just because the API key isn't set.
  * @param out where progress and the final summary are printed
  * @param err where usage errors are printed
  */
 class IngestCommand(
-    private val bulkIngest: BulkIngestRunner,
+    private val runners: Map<String, () -> BulkIngestRunner>,
     private val out: Appendable = System.out,
     private val err: Appendable = System.err,
 ) : Command {
 
     /**
-     * Production wiring: bulk ingests go through [FecBulkAdapter].
-     * Tests use the primary constructor with a fake [BulkIngestRunner] instead.
+     * Production wiring: `fec-bulk` goes through [FecBulkAdapter], `fec-api`
+     * through [FecApiAdapter] (reading [FecApiConfig.fromEnv] lazily, only if
+     * selected). Tests use the primary constructor with fakes instead.
+     * @param dbConfig connection settings passed through to whichever adapter is selected
+     * @param out where progress and the final summary are printed
+     * @param err where usage errors are printed
      */
     constructor(dbConfig: DbConfig, out: Appendable = System.out, err: Appendable = System.err) : this(
-        bulkIngest = FecBulkAdapter(dbConfig, FecBulkDownloader(out = out), out),
+        runners = mapOf(
+            "fec-bulk" to { FecBulkAdapter(dbConfig, FecBulkDownloader(out = out), out) as BulkIngestRunner },
+            "fec-api" to { FecApiAdapter(dbConfig, FecApiConfig.fromEnv(), out = out) as BulkIngestRunner },
+        ),
         out = out,
         err = err,
     )
@@ -45,8 +57,8 @@ class IngestCommand(
 
     /**
      * Parses options, validates them, and dispatches to the selected source.
-     * @return 0 on success, 2 on any usage error (bad/missing option,
-     *   unimplemented source)
+     * @param args the raw `--key=value` arguments following `ingest`
+     * @return 0 on success, 2 on any usage error (bad/missing/unknown option)
      */
     override fun run(args: List<String>): Int {
         val options = parseOptions(args)
@@ -67,28 +79,32 @@ class IngestCommand(
 
         val localDir = options["dir"]?.let(Path::of)
 
-        val source = options["source"]
-        return when (source) {
-            "fec-bulk" -> runBulkIngest(cycle, localDir)
-            "fec-api" -> usageError("'--source=fec-api' is not implemented yet") // PR-155
-            null -> usageError("missing required --source=fec-bulk|fec-api")
-            else -> usageError("unknown --source '$source' (expected fec-bulk or fec-api)")
-        }
+        val source = options["source"] ?: return usageError("missing required --source=fec-bulk|fec-api")
+        val makeRunner = runners[source] ?: return usageError("unknown --source '$source' (expected fec-bulk or fec-api)")
+        return runIngest(makeRunner(), cycle, localDir)
     }
 
     /**
-     * Runs the bulk ingest and prints a one-line summary with the run id and
-     * the totals across all four FEC files.
+     * Runs the selected source's ingest and prints a one-line summary with
+     * the run id and the totals across all of that source's files.
+     * @param runner the adapter to run, already selected for this `--source`
+     * @param cycle the election cycle to pass through to [runner]
+     * @param localDir the local fixture/extract directory to pass through to [runner], if any
+     * @return 0 (this path always succeeds or throws; usage errors return earlier)
      */
-    private fun runBulkIngest(cycle: Int, localDir: Path?): Int {
-        val summary = bulkIngest.ingest(cycle, localDir)
+    private fun runIngest(runner: BulkIngestRunner, cycle: Int, localDir: Path?): Int {
+        val summary = runner.ingest(cycle, localDir)
         val loaded = summary.files.values.sumOf { it.loaded }
         val bad = summary.files.values.sumOf { it.bad }
         out.appendLine("ingest run ${summary.runId} complete: $loaded rows loaded, $bad bad rows skipped")
         return 0
     }
 
-    /** Prints the message to stderr and returns the usage-error exit code. */
+    /**
+     * Prints the message to stderr and returns the usage-error exit code.
+     * @param message the usage error to print
+     * @return 2, this command's usage-error exit code
+     */
     private fun usageError(message: String): Int {
         err.appendLine(message)
         return 2
@@ -97,6 +113,8 @@ class IngestCommand(
     /**
      * Converts `--key=value` arguments to a key/value map.
      * Arguments not in that form (no `--` prefix, or no `=`) are ignored.
+     * @param args the raw arguments following `ingest`
+     * @return a map of option name to value, for every `--key=value` argument found
      */
     private fun parseOptions(args: List<String>): Map<String, String> {
         val options = mutableMapOf<String, String>()

@@ -10,7 +10,7 @@
 2. Main class: `com.campaignfinances.pipeline.MainKt`
 3. Use classpath of module: `campaign-finances.pipeline.main`
 4. Program arguments: e.g. `ingest --source=fec-bulk --cycle=2026` (or `migrate`, `dedup`, `reconcile ...`)
-5. Environment variables (only if overriding defaults): `CF_DB_URL`, `CF_DB_USER`, `CF_DB_PASSWORD`, later `FEC_API_KEY`
+5. Environment variables: `CF_DB_URL`/`CF_DB_USER`/`CF_DB_PASSWORD` only if overriding defaults; `FEC_API_KEY` is required for `--source=fec-api` (PR-155), not needed for `fec-bulk`/`migrate`/etc.
 6. Set breakpoints, hit **Debug**
 
 **Which database does this connect to?** The Docker Compose MySQL. With no env vars set, `DbConfig.fromEnv()` defaults to `jdbc:mysql://localhost:3307/campaign_finances` (`cf`/`cf`), and host port 3307 is the compose container's published port (`127.0.0.1:3307:3306` in `docker-compose.yml`). Start it first with `docker compose up -d --wait`, or you'll get `Communications link failure`.

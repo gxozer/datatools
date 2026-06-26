@@ -3,7 +3,7 @@
 **Epic:** [PR-144](https://mgozer.atlassian.net/browse/PR-144)
 **Parent docs:** [PRD_PHASE1.md](PRD_PHASE1.md), [PROJECT_PLAN.md](PROJECT_PLAN.md)
 **Status:** Draft
-**Last updated:** 2026-06-11
+**Last updated:** 2026-06-26
 
 ## 1. Overview
 
@@ -19,6 +19,7 @@ A Kotlin batch pipeline that ingests FEC data for the 2025–2026 cycle into MyS
 | Migrations | Flyway | Versioned schema, repeatable from empty DB. Note: MySQL DDL is implicit-commit (not transactional), so each migration is kept small and single-statement where possible |
 | DB access | JDBC + jOOQ | Type-safe SQL for bulk-heavy workloads; avoids ORM overhead on 10M+ row inserts; full MySQL dialect support |
 | HTTP client | Ktor client | For api.open.fec.gov; Kotlin-native, easy rate-limit handling |
+| Logging | SLF4J + Logback + kotlin-logging | Standard JVM logging; level controlled by `CF_LOG_LEVEL` env var (default INFO). `DEBUG` logs full request URLs, watermark resolution, throttle waits, and retry attempts |
 | Testing | JUnit 5 + Testcontainers (MySQL) | Integration tests against a real MySQL, fixture FEC files in `src/test/resources` |
 | Runtime | CLI (`./gradlew :pipeline:run --args="..."` from the project root) + Docker Compose for MySQL | No scheduler in Phase 1 |
 
@@ -89,7 +90,8 @@ Conservative, deterministic, auditable — no probabilistic/ML matching in Phase
 ## 7. Data Volumes & Performance
 
 - Itemized individual contributions for a cycle: ~50–80M rows, ~10s of GB raw. Bulk load path uses MySQL `LOAD DATA LOCAL INFILE` into staging, then batched upserts; target full load < 2 hours on a dev machine.
-- API adapter is for incremental top-ups only (rate limit: 1,000 calls/hour) — never for full loads.
+- API adapter is for incremental top-ups only (rate limit: 1,000 calls/hour) — never for full loads. Always run `fec-bulk` first; `fec-api` watermarks from the latest successful run across both sources (`MAX(fec-api.finished_at, fec-bulk.finished_at)`), falling back to cycle start only when neither has ever run.
+- FEC API quirks: requires `two_year_transaction_period` on every schedule_a request (omitting it returns 400); expects dates in `MM/dd/yyyy` format (not ISO `yyyy-MM-dd`). Register for an API key at https://api.data.gov/signup/.
 
 ## 8. Project Layout
 
@@ -102,6 +104,7 @@ CampaignFinances/
   pipeline/                  # this phase (Gradle subproject)
     src/main/kotlin/...      # adapters, normalize, dedup, reconcile
     src/main/resources/db/migration/       # Flyway (V1–V12)
+    src/main/resources/logback.xml         # logging config (level via CF_LOG_LEVEL)
     src/test/kotlin/...
     src/test/resources/fixtures/fec-bulk/  # small real FEC file excerpts
 ```
