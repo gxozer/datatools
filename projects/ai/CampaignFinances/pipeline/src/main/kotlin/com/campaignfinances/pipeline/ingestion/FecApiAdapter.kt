@@ -3,14 +3,18 @@ package com.campaignfinances.pipeline.ingestion
 import com.campaignfinances.pipeline.db.DbConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import mu.KotlinLogging
 import java.nio.file.Path
 import java.sql.Connection
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+
+private val logger = KotlinLogging.logger {}
 
 /**
  * Source adapter for `api.open.fec.gov`'s schedule_a endpoint
@@ -65,6 +69,9 @@ class FecApiAdapter(
 
         private fun defaultHttpClient(): HttpClient = HttpClient(CIO) {
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+            // 60 s per request; FecApiClient retries on HttpRequestTimeoutException
+            // so a single slow page doesn't abort the whole run.
+            install(HttpTimeout) { requestTimeoutMillis = 60_000 }
         }
     }
 
@@ -92,7 +99,7 @@ class FecApiAdapter(
                 try {
                     val minDate = watermark(connection, cycle)
                     out.appendLine("fetching since $minDate")
-                    progress = fetchAndStage(connection, runId, minDate) { progress = it }
+                    progress = fetchAndStage(connection, runId, minDate, cycle) { progress = it }
                     val canonical = CanonicalLoader(connection).loadContributions(runId)
                     IngestRunRepository.finish(connection, runId, "SUCCESS", mapOf("indiv" to progress, "contribution" to canonical))
                     IngestSummary(runId, mapOf("indiv" to progress))
@@ -108,18 +115,27 @@ class FecApiAdapter(
     }
 
     /**
-     * The last successful `fec-api` run's `finished_at` date, or [cycle]'s
-     * first day if this is the first `fec-api` run ever (nothing to top up
-     * before the cycle starts). Delegates to [IngestRunRepository] (PR-188)
-     * so all `ingest_run` reads/writes go through one place.
+     * The watermark date to fetch contributions since, resolved in priority order:
+     * 1. Latest successful `fec-api` run — the normal incremental case.
+     * 2. Latest successful `fec-bulk` run — avoids re-fetching data already loaded
+     *    by bulk when this is the first API top-up after a bulk load (PR-192).
+     * 3. Start of [cycle] — only when neither source has ever run successfully.
      *
      * @param connection an open connection; not closed by this method
-     * @param cycle the two-year federal election cycle, used as the fallback
+     * @param cycle the two-year federal election cycle, used as the final fallback
      * @return the watermark date, formatted `yyyy-MM-dd`
      */
-    private fun watermark(connection: Connection, cycle: Int): String =
-        IngestRunRepository.latestSuccessfulFinishedAt(connection, SOURCE)
+    private fun watermark(connection: Connection, cycle: Int): String {
+        val apiDate = IngestRunRepository.latestSuccessfulFinishedAt(connection, SOURCE)
+        val bulkDate = IngestRunRepository.latestSuccessfulFinishedAt(connection, FecBulkAdapter.SOURCE)
+        // yyyy-MM-dd sorts lexicographically, so maxOrNull() gives the most recent date
+        // without parsing. Using MAX rather than Elvis so a newer bulk run isn't silently
+        // ignored when an older fec-api run exists (PR-193).
+        val resolved = listOfNotNull(apiDate, bulkDate).maxOrNull()
             ?: LocalDate.of(cycle - 1, 1, 1).format(WATERMARK_FORMAT)
+        logger.debug { "watermark resolved to $resolved (fec-api=$apiDate, fec-bulk=$bulkDate)" }
+        return resolved
+    }
 
     /**
      * Pages through every contribution since [minDate], inserting each
@@ -130,6 +146,7 @@ class FecApiAdapter(
      * pages.
      *
      * @param minDate the watermark to fetch contributions since
+     * @param cycle the FEC two-year transaction period, e.g. 2026; required by the API
      * @param onProgress called with the cumulative [FileCounts] after each
      *   page is staged
      * @return the final cumulative [FileCounts] once paging completes
@@ -138,13 +155,14 @@ class FecApiAdapter(
         connection: Connection,
         runId: Long,
         minDate: String,
+        cycle: Int,
         onProgress: (FileCounts) -> Unit,
     ): FileCounts {
         var cursor: LastIndexes? = null
         var loaded = 0L
         var bad = 0L
         while (true) {
-            val page = apiClient.fetchPage(minDate, cursor)
+            val page = apiClient.fetchPage(minDate, cycle, cursor)
             // The API's response shape is well-typed JSON (unlike
             // pipe-delimited bulk text), so the only "malformed row" case
             // here is a missing amount — contribution.amount is NOT NULL,
@@ -156,12 +174,11 @@ class FecApiAdapter(
             loaded += good.size
             bad += missingAmount.size
             onProgress(FileCounts(loaded, bad))
-            if (page.pagination.page >= page.pagination.pages || page.results.isEmpty()) break
-            // Fail fast rather than silently restarting from page 1 (PR-187):
-            // a null cursor on a non-final page would reset to the first page
-            // and loop forever, accumulating duplicate staging rows.
-            cursor = page.pagination.lastIndexes
-                ?: error("FEC API returned null lastIndexes on page ${page.pagination.page} of ${page.pagination.pages}")
+            // The real schedule_a API signals "last page" with null last_indexes, not
+            // via a page-number comparison — `page` is omitted from the actual response.
+            // Empty results is a belt-and-suspenders guard for an unexpected empty page.
+            cursor = page.pagination.lastIndexes ?: break
+            if (page.results.isEmpty()) break
         }
         out.appendLine("[fec-api] loaded $loaded contributions into staging_contribution" + if (bad > 0) ", $bad skipped (missing amount)" else "")
         return FileCounts(loaded, bad)

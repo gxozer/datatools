@@ -51,7 +51,7 @@ class FecApiClientTest {
     fun `fetchPage parses results and pagination from the response body`() {
         val client = clientReturning { onePageJson }
 
-        val page = runBlocking { client.fetchPage("2026-01-01", cursor = null) }
+        val page = runBlocking { client.fetchPage("2026-01-01", 2026, cursor = null) }
 
         val result = page.results.single()
         assertEquals(4041520261234567890L, result.subId)
@@ -68,9 +68,9 @@ class FecApiClientTest {
         var seenParams: Parameters? = null
         val client = clientCapturingRequest({ seenParams = it.url.parameters }) { onePageJson }
 
-        runBlocking { client.fetchPage("2026-02-01", cursor = null) }
+        runBlocking { client.fetchPage("2026-02-01", 2026, cursor = null) }
 
-        assertEquals("2026-02-01", seenParams?.get("min_date"))
+        assertEquals("02/01/2026", seenParams?.get("min_date"))
         assertNull(seenParams?.get("last_index"))
     }
 
@@ -80,7 +80,7 @@ class FecApiClientTest {
         val client = clientCapturingRequest({ seenParams = it.url.parameters }) { onePageJson }
         val cursor = LastIndexes(lastIndex = "4041520261234567890", lastContributionReceiptDate = "2026-03-15")
 
-        runBlocking { client.fetchPage("2026-02-01", cursor) }
+        runBlocking { client.fetchPage("2026-02-01", 2026, cursor) }
 
         assertEquals("4041520261234567890", seenParams?.get("last_index"))
         assertEquals("2026-03-15", seenParams?.get("last_contribution_receipt_date"))
@@ -100,7 +100,7 @@ class FecApiClientTest {
         }
         val client = FecApiClient(jsonHttpClient(engine), apiKey = "test-key", sleep = { sleeps.add(it) }, now = { 0L })
 
-        val page = runBlocking { client.fetchPage("2026-01-01", cursor = null) }
+        val page = runBlocking { client.fetchPage("2026-01-01", 2026, cursor = null) }
 
         assertEquals(2, attempts)
         assertEquals(listOf(7_000L), sleeps)
@@ -112,7 +112,7 @@ class FecApiClientTest {
         val engine = MockEngine { _ -> respond(content = "", status = HttpStatusCode.TooManyRequests) }
         val client = FecApiClient(jsonHttpClient(engine), apiKey = "test-key", maxRetries = 2, sleep = {}, now = { 0L })
 
-        val outcome = runCatching { runBlocking { client.fetchPage("2026-01-01", cursor = null) } }
+        val outcome = runCatching { runBlocking { client.fetchPage("2026-01-01", 2026, cursor = null) } }
 
         assertTrue(outcome.isFailure)
         assertTrue(outcome.exceptionOrNull()?.message.orEmpty().contains("rate limit"))
@@ -131,8 +131,8 @@ class FecApiClientTest {
         )
 
         runBlocking {
-            client.fetchPage("2026-01-01", cursor = null)
-            client.fetchPage("2026-01-01", cursor = null)
+            client.fetchPage("2026-01-01", 2026, cursor = null)
+            client.fetchPage("2026-01-01", 2026, cursor = null)
         }
 
         // No sleep on the first call (nothing to throttle against yet); the

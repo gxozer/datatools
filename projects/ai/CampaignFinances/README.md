@@ -52,7 +52,7 @@ Open the project in IntelliJ by opening this root folder — the Gradle project 
 Database connection (override with `CF_DB_URL`, `CF_DB_USER`, `CF_DB_PASSWORD`):
 `jdbc:mysql://localhost:3307/campaign_finances`, user/password `cf`/`cf`.
 
-`ingest --source=fec-api` additionally requires a `FEC_API_KEY` env var — `fec-bulk` and the other commands don't need it.
+`ingest --source=fec-api` additionally requires a `FEC_API_KEY` env var (register at https://api.data.gov/signup/) — `fec-bulk` and the other commands don't need it. Set `CF_LOG_LEVEL=DEBUG` to log full request URLs, watermark resolution, throttle waits, and retry attempts.
 
 ## Project layout
 

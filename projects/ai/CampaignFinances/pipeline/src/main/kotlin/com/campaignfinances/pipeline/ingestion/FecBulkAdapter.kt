@@ -1,10 +1,13 @@
 package com.campaignfinances.pipeline.ingestion
 
 import com.campaignfinances.pipeline.db.DbConfig
+import mu.KotlinLogging
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.sql.Connection
 import java.sql.DriverManager
+
+private val logger = KotlinLogging.logger {}
 
 /**
  * Result of one bulk ingest.
@@ -132,6 +135,7 @@ class FecBulkAdapter(
         val logBadRow = { line: String, reason: String ->
             badCount++
             if (badCount <= LOGGED_BAD_ROWS_PER_FILE) {
+                logger.warn { "[${type.key}] bad row ($reason): ${line.take(120)}" }
                 out.appendLine("[${type.key}] bad row ($reason): ${line.take(120)}")
             }
         }

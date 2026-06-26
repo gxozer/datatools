@@ -61,13 +61,25 @@ pipeline/src/main/kotlin/com/campaignfinances/pipeline/
 - Flyway migrations are single-statement; MySQL DDL auto-commits so multi-statement files would silently leave partial state.
 - `CanonicalLoader.loadContributions` is shared by both adapters unchanged — the bulk staging format (`MMddyyyy` dates, pipe-delimited) is the source of truth; the API adapter converts to match it.
 
+## Development practices (PR-134)
+
+- **PRD then TDS then implementation** — no code before the design docs exist. File a Jira ticket for writing each document.
+- **Every ticket must have** acceptance criteria and verification steps before work starts. Update verification steps as the implementation clarifies them.
+- **When finishing a ticket**: update it with (a) what was done, (b) which tests were added or changed, (c) whether it is ready to verify. Post this as a Jira comment.
+- **Test-driven development**: write the test first (or alongside), not after. Every bug fix adds or updates at least one test that would have caught the bug.
+- **Test pyramid**: unit → component → integration → end-to-end subprocess. All four types are expected; see `docs/TEST_PLAN_PHASE1.md` for the current inventory.
+- **Design patterns**: apply them where they clarify intent — repository, adapter, factory, strategy. Name the pattern in the KDoc when used.
+- **Code reviews**: file a Jira ticket for every issue found (including Qodo findings). Reply to the inline comment with the ticket ID. No findings should be left as chat-only.
+
 ## Code style
 
 These rules are strictly enforced here — flag violations in code review.
 
 - **KDoc every class and function**: contract, `@param`/`@return`, and rationale with ticket/TDS cross-references where non-obvious.
-- **Flatten Kotlin**: prefer plain `if`/`else` with early returns over stacked `?:` chains, `let`/`run`/`also` scope functions, and nested lambda blocks. A flat version that a junior can read is always preferred over a clever one-liner.
-- **Named helpers over nesting**: extract a named private function rather than nesting a lambda inside a `.use {}` inside a `when`.
+- **Avoid lambdas**: prefer named functions and plain `if`/`else` with early returns. Do not use `let`/`run`/`also`/`apply` scope functions or nested lambda blocks. Exceptions: resource-management lambdas (`.use {}`) and framework DSL blocks (Ktor `httpClient.get { }`) where there is no non-lambda alternative — keep these as flat and short as possible.
+- **Named helpers over nesting**: extract a named private function rather than nesting logic inside a lambda or a `when` arm.
+- **Readability over compactness**: a longer version that a junior can read without explanation is always preferred over a clever one-liner.
+- **Performance tradeoffs**: if you sacrifice readability for performance, explain the specific bottleneck in a comment — what was measured, why it matters, and what was given up.
 - **Inline comments on non-obvious mechanics** — encoding choices, coroutine bridging (`runBlocking`), why a guard exists — not on what the code obviously does.
 - **No clever abbreviations**: `connection`, not `conn`; `statement`, not `stmt`.
 
@@ -76,8 +88,9 @@ These rules are strictly enforced here — flag violations in code review.
 - Use `mcp__jira__*` tools — never `bd` (beads) commands.
 - **Never transition a ticket** (In Progress / Done) unless the user explicitly asks.
 - **Never commit or push** without explicit instruction from the user.
-- After finishing work on a ticket, post a comment summarising what was done.
-- File a new Jira ticket for every independent task — refactors, doc passes, and follow-up gaps all count.
+- After finishing work on a ticket, post a comment with: what was done, tests added/changed, and verification readiness.
+- File a new Jira ticket for every independent task — refactors, doc passes, follow-up gaps, and every issue found in code review.
+- When reviewing code, post a reply on every inline comment with the ticket ID filed for that issue.
 
 ## Environment variables
 
@@ -86,7 +99,8 @@ These rules are strictly enforced here — flag violations in code review.
 | `CF_DB_URL` | JDBC URL (default: `jdbc:mysql://localhost:3307/campaign_finances`) | Non-default DB |
 | `CF_DB_USER` | DB user (default: `cf`) | Non-default DB |
 | `CF_DB_PASSWORD` | DB password (default: `cf`) | Non-default DB |
-| `FEC_API_KEY` | api.open.fec.gov API key | `ingest --source=fec-api` only |
+| `FEC_API_KEY` | api.open.fec.gov API key (register at https://api.data.gov/signup/) | `ingest --source=fec-api` only |
+| `CF_LOG_LEVEL` | Logback root level (default: `INFO`). Set to `DEBUG` to log full request URLs, watermark resolution, throttle waits, and retry attempts | Debug runs |
 
 ## Known environment quirks
 

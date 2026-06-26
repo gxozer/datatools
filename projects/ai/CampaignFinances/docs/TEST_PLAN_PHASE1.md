@@ -3,7 +3,7 @@
 **Epic:** [PR-144](https://mgozer.atlassian.net/browse/PR-144)
 **Parent docs:** [TDS_PHASE1.md](TDS_PHASE1.md) §9 (testing strategy, brief), [PROJECT_PLAN.md](PROJECT_PLAN.md)
 **Status:** Living document — updated as each Phase 1 ticket lands
-**Last updated:** 2026-06-23 (PR-171–PR-175 closed; PR-155 implemented)
+**Last updated:** 2026-06-26 (PR-155 smoke-test fixes: date format, two_year_transaction_period, watermark fallback, logging)
 
 This is the operational expansion of [TDS_PHASE1.md](TDS_PHASE1.md) §9: not just the testing *strategy* (unit/integration/reconciliation, stated briefly there), but a concrete inventory of what test coverage exists today, what's planned per ticket, and the gaps tracked between them. Phase 1 is the only phase implemented so far ([PROJECT_PLAN.md](PROJECT_PLAN.md) defines 7 phases total); this document will need a Phase 2 counterpart once that phase is designed.
 
@@ -30,11 +30,11 @@ This is the operational expansion of [TDS_PHASE1.md](TDS_PHASE1.md) §9: not jus
 | `FlywayMigrationTest.kt` | Component | All migrations (V1–V12) apply cleanly to an empty DB; all 11 expected tables exist afterward |
 | `CliSubprocessTest.kt` | End-to-end (subprocess) | The built CLI run as a genuine child process (`migrate` then `ingest`) against real `CF_DB_*` env vars and a real Testcontainers MySQL (PR-174) |
 | `ingestion/FecBulkParserTest.kt` | Unit | Pure parsing logic for all 4 FEC bulk file types — good rows, malformed rows, negative amounts, oversized fields, blank dates |
-| `ingestion/FecApiClientTest.kt` | Unit (mocked HTTP) | `FecApiClient`: response/pagination parsing, `min_date`/keyset-cursor query params, 429 retry with `Retry-After`, retry exhaustion, and the proactive throttle between calls — no real network call (PR-155) |
+| `ingestion/FecApiClientTest.kt` | Unit (mocked HTTP) | `FecApiClient`: response/pagination parsing, `min_date` converted to `MM/dd/yyyy` for FEC API, `two_year_transaction_period` param, keyset-cursor params, 429 retry with `Retry-After`, timeout retry with exponential backoff, retry exhaustion, and the proactive throttle between calls — no real network call (PR-155) |
 | `ingestion/CanonicalLoaderTest.kt` | Component | `CanonicalLoader`'s 4 upsert methods in isolation: idempotency (same run, re-invoked), **cross-run upserts with a corrected value (different `ingest_run_id`, PR-171)**, attribution non-filtering, unresolved-FK and blank-designation skip counting, donor_id preservation, NOT-NULL skip counting, affected-rows assumption, table-driven V12 generated-column normalization including a blank `contributor_name` |
 | `ingestion/CanonicalSchemaContractTest.kt` | Schema/contract | Table-driven `information_schema.columns` nullability assertions for every column on `candidate`, `committee`, `candidate_committee`, `contribution` (PR-172) |
 | `ingestion/FecBulkIngestIntegrationTest.kt` | Integration | Full `FecBulkAdapter.ingest()` against fixture files: staging load + canonical load + `ingest_run.row_counts`, end-to-end idempotency on re-run |
-| `ingestion/FecApiAdapterIntegrationTest.kt` | Integration | Full `FecApiAdapter.ingest()` against mocked HTTP + Testcontainers MySQL: staging + canonical population, watermark falling back to cycle-start on the first run, same-source idempotency, and the watermark advancing to the prior run's `finished_at` on a second run (PR-155) |
+| `ingestion/FecApiAdapterIntegrationTest.kt` | Integration | Full `FecApiAdapter.ingest()` against mocked HTTP + Testcontainers MySQL: staging + canonical population, watermark falling back to cycle-start on the first run, same-source idempotency, and the watermark advancing to the prior run's `finished_at` on a second run (PR-155). Note: watermark now also falls back to latest `fec-bulk` run before cycle start (PR-193) — not yet covered by automated test |
 | `ingestion/TestDbSupport.kt` | (test helper, not a test) | Shared `Connection.truncateAllPipelineTables()` / `queryLong()` / `queryString()` used by the Testcontainers-backed tests above |
 
 ## 3. Coverage by Phase 1 ticket
@@ -45,6 +45,7 @@ This is the operational expansion of [TDS_PHASE1.md](TDS_PHASE1.md) §9: not jus
 | PR-153 bulk adapter | Done | Parser unit tests (all 4 file types, malformed rows); staging-load integration test | `FecBulkParserTest`, `FecBulkIngestIntegrationTest` (staging half) — complete |
 | **PR-154 normalize/load** | Done | Table-driven normalization + attribution-logic unit tests; canonical population + idempotency | `CanonicalLoaderTest`, `FecBulkIngestIntegrationTest` (canonical half) — complete; follow-up gaps from review closed via PR-171–PR-174 (§4) |
 | **PR-155 FEC API adapter** | Done | Mocked-HTTP unit tests (response parsing, pagination, watermark logic), cross-source idempotency integration test | `FecApiClientTest`, `FecApiAdapterIntegrationTest`, `IngestCommandTest` (fec-api dispatch) — complete; "cross-source idempotency" scoped to same-source (fec-api-on-fec-api) only, see §4 |
+| **PR-193 watermark fec-bulk fallback** | Done | Integration test: first `fec-api` run after a `fec-bulk` load watermarks from bulk's `finished_at`, not cycle start | Not yet — gap noted in `FecApiAdapterIntegrationTest` row above |
 | PR-156 donor dedup | Not started | Table-driven normalization rules **and near-miss cases that must NOT merge**; audit-completeness check (`donor_link` count = linked-contribution count); determinism (re-run = identical) | None yet — depends on PR-154's `normalized_name`/`zip5` columns, which exist |
 | PR-157 ranking tables | Not started | Ranking/breakdown integration tests; concurrent-read-during-rebuild test (atomic `RENAME TABLE` swap) | None yet |
 | PR-158 reconciliation | Not started | Comparison/tolerance unit tests; fixture-based reconciliation test (known inputs → known results) | None yet |

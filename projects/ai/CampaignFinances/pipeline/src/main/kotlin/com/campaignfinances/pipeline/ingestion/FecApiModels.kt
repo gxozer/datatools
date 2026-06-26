@@ -31,14 +31,16 @@ data class ScheduleAResult(
 )
 
 /**
- * @property page the current 1-based page number
+ * @property page the current 1-based page number, or 0 if the API omits it
+ *   (the real schedule_a endpoint omits `page` when using keyset pagination)
  * @property pages total pages available for this query
  * @property lastIndexes the keyset cursor for requesting the next page; null
- *   on the last page
+ *   signals the last page — this is the authoritative termination signal, not
+ *   `page >= pages`
  */
 @Serializable
 data class Pagination(
-    val page: Int,
+    val page: Int = 0,
     val pages: Int,
     @SerialName("last_indexes") val lastIndexes: LastIndexes? = null,
 )
