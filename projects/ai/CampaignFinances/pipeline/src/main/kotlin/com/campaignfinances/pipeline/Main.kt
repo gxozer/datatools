@@ -32,7 +32,7 @@ fun main(args: Array<String>) {
         commands = listOf(
             MigrateCommand(Migrator(dbConfig)),
             IngestCommand(dbConfig),
-            DedupCommand(),
+            DedupCommand(dbConfig),
             ReconcileCommand(),
         ),
     )

@@ -40,7 +40,8 @@ class FecBulkDownloader(
      * downloading and unzipping it first unless already cached.
      */
     fun fetch(cycle: Int, type: FecBulkFileType): Path {
-        val dir = cacheDir.resolve(cycle.toString()).also { it.createDirectories() }
+        val dir = cacheDir.resolve(cycle.toString())
+        dir.createDirectories()
 
         val txt = dir.resolve(type.txtName)
         if (txt.exists()) {

@@ -125,25 +125,21 @@ class FecBulkAdapter(
         val loader = StagingLoader(connection)
         loader.truncate(type)
 
-        // Bad rows are reported through this callback rather than thrown: a few
+        // Bad rows are reported through a callback rather than thrown: a few
         // malformed rows in a 25M-row file is expected, not exceptional. We
         // always count every one (for the FileCounts returned below) but only
         // print the first LOGGED_BAD_ROWS_PER_FILE, so a file with thousands of
         // bad rows doesn't flood `out` — the printed ones are just a sample to
         // eyeball, the count is what's authoritative.
         var badCount = 0L
-        val logBadRow = { line: String, reason: String ->
-            badCount++
-            if (badCount <= LOGGED_BAD_ROWS_PER_FILE) {
-                logger.warn { "[${type.key}] bad row ($reason): ${line.take(120)}" }
-                out.appendLine("[${type.key}] bad row ($reason): ${line.take(120)}")
-            }
-        }
 
         // FEC bulk files are not guaranteed clean UTF-8; ISO-8859-1 maps every
         // byte to a character, so reading never throws on odd encodings.
         val loadedCount = txt.toFile().useLines(StandardCharsets.ISO_8859_1) { lines ->
-            val goodRows = parseGoodRows(lines, type, logBadRow)
+            val goodRows = parseGoodRows(lines, type) { line: String, reason: String ->
+                badCount++
+                reportBadRow(type, line, reason, badCount)
+            }
             loader.load(type, goodRows, SOURCE, runId)
         }
 
@@ -178,6 +174,24 @@ class FecBulkAdapter(
                 is ParseResult.Ok -> yield(result.values)
                 is ParseResult.Bad -> onBadRow(line, result.reason)
             }
+        }
+    }
+
+    /**
+     * Logs one bad row to [logger] at WARN level and echoes it to [out], but
+     * only for the first [LOGGED_BAD_ROWS_PER_FILE] per file so a heavily-
+     * corrupted file does not flood output. The count continues accurately
+     * regardless.
+     *
+     * @param type the file type, used for the log prefix (e.g. `[indiv]`)
+     * @param line the raw offending line, truncated to 120 characters
+     * @param reason the parser's rejection reason
+     * @param badCount the running total of bad rows, used to gate printing
+     */
+    private fun reportBadRow(type: FecBulkFileType, line: String, reason: String, badCount: Long) {
+        if (badCount <= LOGGED_BAD_ROWS_PER_FILE) {
+            logger.warn { "[${type.key}] bad row ($reason): ${line.take(120)}" }
+            out.appendLine("[${type.key}] bad row ($reason): ${line.take(120)}")
         }
     }
 

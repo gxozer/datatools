@@ -78,7 +78,7 @@ class FecApiClient(
         var attempt = 0
         while (true) {
             val response = try {
-                httpClient.get(baseUrl) {
+                val httpResponse = httpClient.get(baseUrl) {
                     parameter("api_key", apiKey)
                     parameter("two_year_transaction_period", twoYearPeriod)
                     parameter("min_date", fecDate)
@@ -89,7 +89,9 @@ class FecApiClient(
                         parameter("last_index", cursor.lastIndex)
                         parameter("last_contribution_receipt_date", cursor.lastContributionReceiptDate)
                     }
-                }.also { logger.debug { "GET ${it.call.request.url}" } }
+                }
+                logger.debug { "GET ${httpResponse.call.request.url}" }
+                httpResponse
             } catch (e: HttpRequestTimeoutException) {
                 attempt++
                 check(attempt <= maxRetries) { "FEC API timed out after $maxRetries retries" }

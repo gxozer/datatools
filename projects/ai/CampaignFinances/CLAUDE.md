@@ -86,7 +86,7 @@ These rules are strictly enforced here — flag violations in code review.
 ## Jira workflow
 
 - Use `mcp__jira__*` tools — never `bd` (beads) commands.
-- **Never transition a ticket** (In Progress / Done) unless the user explicitly asks.
+- **Never transition a ticket** (In Progress / Done) unless the user explicitly says to do so — e.g. "close it", "mark it done", "transition to Done". Questions like "which tickets can be closed?" or status updates like "I pushed and merged" are NOT instructions to transition.
 - **Never commit or push** without explicit instruction from the user.
 - After finishing work on a ticket, post a comment with: what was done, tests added/changed, and verification readiness.
 - File a new Jira ticket for every independent task — refactors, doc passes, follow-up gaps, and every issue found in code review.
