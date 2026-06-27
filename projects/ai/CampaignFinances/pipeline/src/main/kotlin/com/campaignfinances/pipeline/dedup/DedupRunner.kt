@@ -22,23 +22,12 @@ data class DedupSummary(
 )
 
 /**
- * A staging row joined to its canonical contribution id, ready for normalization.
- */
-private data class StagingRow(
-    val contributionId: Long,
-    val contributorName: String?,
-    val zipCode: String?,
-    val employer: String?,
-)
-
-/**
  * The normalized key used to group contributions into a single donor (PR-156,
  * TDS §5 step 2).
  *
  * Blank employer is represented as empty string, forming its own bucket
- * separate from any named employer — the conservative interpretation of
- * "employer matches or either is blank" that avoids transitively merging
- * different named employers through shared blank-employer rows.
+ * separate from any named employer — the conservative interpretation that avoids
+ * transitively merging different named employers through shared blank-employer rows.
  */
 private data class DonorKey(
     val lastName: String,
@@ -50,20 +39,26 @@ private data class DonorKey(
 /**
  * Donor de-duplication runner (PR-156, docs/TDS_PHASE1.md §5).
  *
- * Reads all rows from `staging_contribution`, normalizes name/employer/zip via
- * [DonorNormalizer], groups by the conservative match key
- * `(last_name, first_name, zip5, employer)`, and writes one `donor` row per
- * group with `donor_link` audit rows linking each canonical `contribution` to
- * its donor. Also stamps `contribution.donor_id`.
+ * Reads all rows from `staging_contribution` (joined to `contribution`) in a
+ * single streaming pass, normalizes name/employer/zip via [DonorNormalizer],
+ * groups by `(last_name, first_name, zip5, employer)`, and writes one `donor`
+ * row per group with `donor_link` audit rows and a `contribution.donor_id`
+ * stamp.
  *
  * **Re-runnable:** always clears `donor`, `donor_link`, and
- * `contribution.donor_id` before rebuilding, so rule changes can be applied
- * with a plain `dedup` re-run without re-ingesting.
+ * `contribution.donor_id` before rebuilding — the entire clear+rebuild runs in
+ * a single JDBC transaction (PR-201) so a failure rolls back to the pre-run
+ * state rather than leaving the DB empty.
  *
  * **Blank employer strategy:** contributions with no employer form their own
  * donor group per name+zip5, separate from any named-employer group. This
  * avoids the transitivity trap where blank-employer rows would merge two
  * different named employers into one donor.
+ *
+ * **Duplicate staging rows:** `staging_contribution` accumulates rows across
+ * API ingest runs (no UNIQUE constraint on source+sub_id). The streaming pass
+ * deduplicates by `contribution.id` — only the first staging row seen per
+ * canonical contribution is used (PR-202).
  *
  * **Skipped rows:** contributions with a null/blank contributor name, or whose
  * zip cannot produce a 5-digit zip5, are excluded — `donor_id` stays NULL.
@@ -81,39 +76,46 @@ class DedupRunner(
     }
 
     /**
-     * Runs the full dedup job: clear → load → normalize → group → write.
+     * Runs the full dedup job: clear → stream+group → write, wrapped in a
+     * single transaction.
+     *
+     * On any exception the transaction is rolled back, leaving the DB in the
+     * same state it was before the run started.
      *
      * @return summary counts for the completed run
      */
     fun run(): DedupSummary {
         dbConfig.openConnection().use { connection ->
-            out.appendLine("dedup: clearing previous results")
-            clearExistingDedup(connection)
+            connection.autoCommit = false
+            try {
+                out.appendLine("dedup: clearing previous results")
+                clearExistingDedup(connection)
 
-            out.appendLine("dedup: loading staging rows")
-            val stagingRows = loadStagingRows(connection)
-            out.appendLine("dedup: ${stagingRows.size} staging rows loaded")
+                out.appendLine("dedup: loading and grouping staging rows")
+                val (groups, skipped) = streamIntoGroups(connection)
+                out.appendLine("dedup: ${groups.size} donor groups, $skipped rows skipped (blank name or zip)")
+                logger.debug { "dedup: ${groups.size} donor groups, $skipped skipped" }
 
-            val groups = groupByDonorKey(stagingRows)
-            val totalGrouped = groups.values.sumOf { it.size }
-            val skipped = stagingRows.size.toLong() - totalGrouped
-            out.appendLine("dedup: ${groups.size} donor groups, $skipped rows skipped (blank name or zip)")
-            logger.debug { "dedup: ${groups.size} donor groups from ${stagingRows.size} staging rows, $skipped skipped" }
+                var donorsCreated = 0L
+                var linksCreated = 0L
+                for ((key, contributionIds) in groups) {
+                    val donorId = insertDonor(connection, key)
+                    val matchRule = if (key.employer.isEmpty()) MATCH_RULE_NO_EMPLOYER else MATCH_RULE_EMPLOYER
+                    insertDonorLinks(connection, donorId, contributionIds, matchRule)
+                    updateContributionDonorIds(connection, donorId, contributionIds)
+                    donorsCreated++
+                    linksCreated += contributionIds.size
+                }
 
-            var donorsCreated = 0L
-            var linksCreated = 0L
-            for ((key, rows) in groups) {
-                val donorId = insertDonor(connection, key)
-                val matchRule = if (key.employer.isEmpty()) MATCH_RULE_NO_EMPLOYER else MATCH_RULE_EMPLOYER
-                val contributionIds = rows.map { it.contributionId }
-                insertDonorLinks(connection, donorId, contributionIds, matchRule)
-                updateContributionDonorIds(connection, donorId, contributionIds)
-                donorsCreated++
-                linksCreated += rows.size
+                connection.commit()
+                out.appendLine("dedup: $donorsCreated donors created, $linksCreated links written, $skipped skipped")
+                return DedupSummary(donorsCreated, linksCreated, skipped)
+            } catch (e: Exception) {
+                connection.rollback()
+                throw e
+            } finally {
+                connection.autoCommit = true
             }
-
-            out.appendLine("dedup: $donorsCreated donors created, $linksCreated links written, $skipped skipped")
-            return DedupSummary(donorsCreated, linksCreated, skipped)
         }
     }
 
@@ -123,6 +125,8 @@ class DedupRunner(
      * 1. `donor_link` (references both `donor` and `contribution`)
      * 2. `contribution.donor_id` (FK to `donor`)
      * 3. `donor`
+     *
+     * Runs inside the transaction started by [run]; rolled back on failure.
      *
      * @param connection an open connection; not closed by this method
      */
@@ -135,55 +139,57 @@ class DedupRunner(
     }
 
     /**
-     * Loads all staging rows that have a matching canonical contribution record.
-     * The INNER JOIN excludes orphaned staging rows (e.g., from failed ingest
-     * runs whose staging data was not cleaned up).
+     * Streams the staging+contribution join result and builds the donor groups
+     * map in a single pass, without materializing the full row list in memory
+     * (PR-203: avoids OOM on 50–80M row FEC dataset).
+     *
+     * Deduplicates by `contribution.id` — if `staging_contribution` has
+     * multiple rows for the same `(source, sub_id)` (accumulated from repeated
+     * API ingest runs), only the first one encountered per `contribution.id`
+     * contributes to the grouping (PR-202).
+     *
+     * Rows where name or zip5 cannot be normalized are silently excluded;
+     * their count is returned as the second element of the pair.
      *
      * @param connection an open connection; not closed by this method
-     * @return all joined rows, unordered
+     * @return pair of (donor-key → contribution-id list, skipped-row count)
      */
-    private fun loadStagingRows(connection: Connection): List<StagingRow> {
+    private fun streamIntoGroups(
+        connection: Connection,
+    ): Pair<Map<DonorKey, MutableList<Long>>, Long> {
         val sql = """
             SELECT c.id, s.contributor_name, s.zip_code, s.employer
             FROM staging_contribution s
             JOIN contribution c ON c.source = s.source AND c.source_record_id = s.sub_id
         """.trimIndent()
-        val rows = mutableListOf<StagingRow>()
+
+        val groups = mutableMapOf<DonorKey, MutableList<Long>>()
+        val seenIds = mutableSetOf<Long>()
+        var skipped = 0L
+
         connection.prepareStatement(sql).use { statement ->
             statement.executeQuery().use { rs ->
                 while (rs.next()) {
-                    rows.add(
-                        StagingRow(
-                            contributionId = rs.getLong(1),
-                            contributorName = rs.getString(2),
-                            zipCode = rs.getString(3),
-                            employer = rs.getString(4),
-                        ),
-                    )
+                    val contributionId = rs.getLong(1)
+                    if (!seenIds.add(contributionId)) continue
+
+                    val name = DonorNormalizer.parseName(rs.getString(2))
+                    val zip5 = DonorNormalizer.normalizeZip(rs.getString(3))
+
+                    if (name == null || zip5 == null) {
+                        skipped++
+                        continue
+                    }
+
+                    val employer = DonorNormalizer.normalizeEmployer(rs.getString(4)) ?: ""
+                    val key = DonorKey(name.lastName, name.firstName, zip5, employer)
+
+                    if (!groups.containsKey(key)) groups[key] = mutableListOf()
+                    groups[key]!!.add(contributionId)
                 }
             }
         }
-        return rows
-    }
-
-    /**
-     * Applies [DonorNormalizer] to each row and groups by [DonorKey]. Rows
-     * where name or zip5 cannot be normalized are silently excluded — those
-     * contributions retain `donor_id = NULL`.
-     *
-     * @param rows the raw staging rows from [loadStagingRows]
-     * @return a map of donor key to the rows belonging to that group
-     */
-    private fun groupByDonorKey(rows: List<StagingRow>): Map<DonorKey, List<StagingRow>> {
-        val groups = mutableMapOf<DonorKey, MutableList<StagingRow>>()
-        for (row in rows) {
-            val name = DonorNormalizer.parseName(row.contributorName) ?: continue
-            val zip5 = DonorNormalizer.normalizeZip(row.zipCode) ?: continue
-            val employer = DonorNormalizer.normalizeEmployer(row.employer) ?: ""
-            val key = DonorKey(name.lastName, name.firstName, zip5, employer)
-            groups.getOrPut(key) { mutableListOf() }.add(row)
-        }
-        return groups
+        return Pair(groups, skipped)
     }
 
     /**

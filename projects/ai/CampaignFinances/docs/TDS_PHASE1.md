@@ -3,7 +3,7 @@
 **Epic:** [PR-144](https://mgozer.atlassian.net/browse/PR-144)
 **Parent docs:** [PRD_PHASE1.md](PRD_PHASE1.md), [PROJECT_PLAN.md](PROJECT_PLAN.md)
 **Status:** Draft
-**Last updated:** 2026-06-26
+**Last updated:** 2026-06-26 (PR-156 dedup implementation complete)
 
 ## 1. Overview
 
@@ -74,13 +74,33 @@ ingest_run   (id PK, source, started_at, finished_at, status, row_counts JSON)
 
 ## 5. Donor De-duplication
 
-Conservative, deterministic, auditable — no probabilistic/ML matching in Phase 1.
+Conservative, deterministic, auditable — no probabilistic/ML matching in Phase 1. **Status: implemented (PR-156).**
 
-1. **Normalize:** uppercase, trim, collapse whitespace; strip punctuation and suffixes (JR/SR/II); zip → zip5; employer aliases normalized (e.g., `SELF-EMPLOYED`/`SELF` → `SELF EMPLOYED`).
-2. **Match rule:** two records are the same donor iff normalized `(last_name, first_name, zip5)` match **and** employer matches or either is blank. Anything weaker stays separate.
-3. **Audit:** every raw record → canonical donor mapping is stored in `donor_link` with the rule that fired. A donor's detail can always be exploded back to raw records.
-4. Rules live in one pure-function module with table-driven unit tests; tightening/loosening rules is a re-run of the dedup job, not a re-ingest.
-5. Normalized match keys (e.g., uppercased name, zip5) are stored as generated columns on the staging/contribution tables and indexed, since MySQL cannot index expressions directly.
+### 5.1 Normalization (`DonorNormalizer`)
+
+All normalization is a pure-function object with table-driven unit tests so rule changes are safe to make and re-test independently of the database.
+
+- **Name:** FEC format is `"LAST, FIRST MIDDLE"`. Split on the first comma; take only the first token of the first-name part (discard middle name). Uppercase, collapse whitespace, replace punctuation (apostrophes, hyphens, etc.) with a space rather than removing it — conservative choice: `O'BRIEN` → `O BRIEN` and `OBRIEN` stay separate rather than risk false merges. Strip known suffixes (JR, SR, II, III, IV, ESQ, MD, PHD, DDS, RET) from the last-name tokens only. If the resulting last-name token list is empty (e.g., `"---, JOHN"`), the row is skipped.
+- **Employer:** normalize to uppercase, collapse whitespace, then apply an alias map: `SELF`/`SELF-EMPLOYED`/`SELFEMPLOYED` → `SELF EMPLOYED`; `UNEMPLOYED`/`NOT-EMPLOYED` → `NOT EMPLOYED`; `N/A`/`NA`/`NONE`/`UNKNOWN`/`INFORMATION REQUESTED` → null (treated as blank). Plain names are stored as-is after uppercasing.
+- **Zip:** extract the first 5 consecutive digits (handles 9-digit zip+4 and `NNNNN-NNNN` formats). Fewer than 5 digits → null (row skipped).
+
+### 5.2 Match key and grouping
+
+The match key is `(last_name, first_name, zip5, employer)` where blank employer is represented as empty string `""` rather than null. Blank employer contributions form their own group per `(name, zip5)`, **separate from any named-employer group**. This conservative "blank employer = own bucket" approach avoids the transitivity trap: if blank-employer rows were merged into either named employer, rows from `ACME` and `BIGCORP` could end up in the same donor through a chain of blank-employer intermediaries.
+
+Match rules stored in `donor_link.match_rule`:
+- `"name+zip5+employer"` — all four key components matched (employer was non-blank)
+- `"name+zip5 (employer blank)"` — employer was blank; grouped on name+zip5 only
+
+### 5.3 Job design (`DedupRunner`)
+
+The job is **re-runnable** without re-ingesting: on every run it clears `donor_link`, nulls `contribution.donor_id`, and deletes all `donor` rows, then rebuilds from scratch. This means tightening or loosening a match rule is a one-command re-run (`./gradlew :pipeline:run --args="dedup"`).
+
+Skipped rows (blank/un-normalizable name or zip) retain `contribution.donor_id = NULL` — they do not block the rest of the run, and their count is surfaced in `DedupSummary.skipped`.
+
+### 5.4 Audit trail
+
+Every `contribution` → `donor` mapping is recorded in `donor_link(donor_id, contribution_id, match_rule)`. The full set of raw contributions that collapsed into any single donor can always be recovered by joining `donor_link` → `contribution` → `staging_contribution`.
 
 ## 6. Ranking & Reconciliation
 
