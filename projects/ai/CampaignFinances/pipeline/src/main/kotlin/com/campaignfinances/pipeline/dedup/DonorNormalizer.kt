@@ -18,10 +18,16 @@ object DonorNormalizer {
     data class ParsedName(val lastName: String, val firstName: String)
 
     /**
-     * Honorific/generation suffixes that are stripped before name comparison.
-     * FEC data includes these as part of the name field.
+     * Honorific/generation suffixes stripped from the last-name part before
+     * comparison — but only when at least one non-suffix token remains.
+     * If every token in the last name is a suffix (e.g. raw name `"SR, JOHN"`),
+     * the tokens are kept as-is so the contributor is not silently excluded (PR-204).
      */
     private val NAME_SUFFIXES = setOf("JR", "SR", "II", "III", "IV", "ESQ", "MD", "PHD", "DDS", "RET")
+
+    // Hoisted to avoid per-call Regex compilation on large datasets (PR-205).
+    private val NON_LETTER_PATTERN = Regex("[^A-Z ]")
+    private val WHITESPACE_PATTERN = Regex("\\s+")
 
     /**
      * Maps raw employer values that mean "self-employed" or "not applicable"
@@ -57,7 +63,8 @@ object DonorNormalizer {
      * If there is no comma the entire value is treated as the last name.
      *
      * @param raw the raw contributor_name field from staging_contribution
-     * @return the parsed name, or null if [raw] is blank or the last name normalizes to empty
+     * @return the parsed name, or null if [raw] is blank or the last name has
+     *   no letter characters at all (e.g. pure punctuation like `"---, JOHN"`)
      */
     fun parseName(raw: String?): ParsedName? {
         if (raw.isNullOrBlank()) return null
@@ -73,19 +80,34 @@ object DonorNormalizer {
 
     /**
      * Normalizes one component of a name (last or first):
-     * strips non-letter characters, collapses whitespace, removes [NAME_SUFFIXES].
+     * replaces non-letter characters with spaces, collapses whitespace, then
+     * removes [NAME_SUFFIXES] tokens — but only when at least one non-suffix
+     * token remains. If every token is a suffix (e.g. `"SR"`), the tokens are
+     * returned as-is so contributors whose last name matches a suffix string
+     * are not silently excluded (PR-204).
      *
      * Input is expected to be uppercase already (from [parseName]).
      *
      * @param raw the raw name component, already uppercased
-     * @return the normalized component; empty string if only punctuation or suffixes remain
+     * @return the normalized component; empty string only if the input had no
+     *   letter characters at all
      */
     fun normalizeNamePart(raw: String): String {
         val upper = raw.uppercase()
-        val lettersAndSpaces = upper.replace(Regex("[^A-Z ]"), " ")
-        val collapsed = lettersAndSpaces.trim().replace(Regex("\\s+"), " ")
-        val tokens = collapsed.split(" ").filter { token -> token.isNotEmpty() && token !in NAME_SUFFIXES }
-        return tokens.joinToString(" ")
+        val lettersAndSpaces = upper.replace(NON_LETTER_PATTERN, " ")
+        val collapsed = lettersAndSpaces.trim().replace(WHITESPACE_PATTERN, " ")
+        if (collapsed.isEmpty()) return ""
+        val parts = collapsed.split(" ")
+        val retained = mutableListOf<String>()
+        for (token in parts) {
+            if (token.isNotEmpty() && token !in NAME_SUFFIXES) {
+                retained.add(token)
+            }
+        }
+        // Only strip suffixes when non-suffix tokens exist; otherwise keep all
+        // so a genuine last name that equals a suffix string is not dropped.
+        if (retained.isEmpty()) return collapsed
+        return retained.joinToString(" ")
     }
 
     /**
@@ -97,7 +119,7 @@ object DonorNormalizer {
      */
     fun normalizeEmployer(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
-        val upper = raw.uppercase().trim().replace(Regex("\\s+"), " ")
+        val upper = raw.uppercase().trim().replace(WHITESPACE_PATTERN, " ")
         if (EMPLOYER_CANONICAL.containsKey(upper)) return EMPLOYER_CANONICAL[upper]
         return upper
     }

@@ -3,6 +3,7 @@ package com.campaignfinances.pipeline.dedup
 import com.campaignfinances.pipeline.db.DbConfig
 import mu.KotlinLogging
 import java.sql.Connection
+import java.sql.ResultSet
 import java.sql.Statement
 
 private val logger = KotlinLogging.logger {}
@@ -39,16 +40,27 @@ private data class DonorKey(
 /**
  * Donor de-duplication runner (PR-156, docs/TDS_PHASE1.md §5).
  *
- * Reads all rows from `staging_contribution` (joined to `contribution`) in a
- * single streaming pass, normalizes name/employer/zip via [DonorNormalizer],
- * groups by `(last_name, first_name, zip5, employer)`, and writes one `donor`
- * row per group with `donor_link` audit rows and a `contribution.donor_id`
- * stamp.
+ * Uses two streaming passes over `staging_contribution JOIN contribution` to
+ * avoid holding all contribution IDs in JVM heap (PR-207):
+ *
+ * **Pass 1** — streams every row, inserts one `donor` row the first time a
+ * new normalized `(last, first, zip5, employer)` key is seen, and builds a
+ * `DonorKey → donor.id` map (O(D) where D = distinct donors). Donor inserts
+ * are batched [DONOR_BATCH_SIZE] at a time (PR-208) to eliminate the per-row
+ * prepare+execute overhead that caused multi-hour runtimes on large datasets.
+ * Progress is logged every [PROGRESS_LOG_INTERVAL] rows.
+ *
+ * **Pass 2** — streams again, looks up `donor.id` by key, and batch-writes
+ * `donor_link` + `contribution.donor_id` as rows arrive.
+ *
+ * Each pass uses a dedicated read-only connection so the streaming `ResultSet`
+ * is isolated from the transactional write connection — this prevents the
+ * "streaming result set still active" error that occurred when OOM aborted the
+ * read and left the connection in a bad state.
  *
  * **Re-runnable:** always clears `donor`, `donor_link`, and
  * `contribution.donor_id` before rebuilding — the entire clear+rebuild runs in
- * a single JDBC transaction (PR-201) so a failure rolls back to the pre-run
- * state rather than leaving the DB empty.
+ * a single JDBC transaction so a failure rolls back to the pre-run state.
  *
  * **Blank employer strategy:** contributions with no employer form their own
  * donor group per name+zip5, separate from any named-employer group. This
@@ -56,9 +68,9 @@ private data class DonorKey(
  * different named employers into one donor.
  *
  * **Duplicate staging rows:** `staging_contribution` accumulates rows across
- * API ingest runs (no UNIQUE constraint on source+sub_id). The streaming pass
- * deduplicates by `contribution.id` — only the first staging row seen per
- * canonical contribution is used (PR-202).
+ * API ingest runs (no UNIQUE constraint on source+sub_id). Both passes sort by
+ * `contribution.id` and skip consecutive duplicates, so only the first staging
+ * row per canonical contribution is used (PR-202).
  *
  * **Skipped rows:** contributions with a null/blank contributor name, or whose
  * zip cannot produce a 5-digit zip5, are excluded — `donor_id` stays NULL.
@@ -73,11 +85,39 @@ class DedupRunner(
     companion object {
         private const val MATCH_RULE_EMPLOYER = "name+zip5+employer"
         private const val MATCH_RULE_NO_EMPLOYER = "name+zip5 (employer blank)"
+
+        /**
+         * Number of `donor_link` + `contribution` update rows buffered before
+         * flushing to the write connection during pass 2. Large enough to amortize
+         * round-trip overhead; small enough to keep retry scope narrow on failure.
+         */
+        private const val LINK_BATCH_SIZE = 1_000
+
+        /**
+         * Number of `donor` rows buffered before flushing to the write connection
+         * during pass 1. Matches [LINK_BATCH_SIZE] so both passes have the same
+         * amortization profile (PR-208).
+         */
+        private const val DONOR_BATCH_SIZE = 1_000
+
+        /**
+         * Number of contributions processed between progress log lines during
+         * pass 1. At 10 000 rows per line a 10 M-row dataset produces 1 000 lines.
+         */
+        private const val PROGRESS_LOG_INTERVAL = 10_000L
+
+        private val STAGING_QUERY = """
+            SELECT c.id, s.contributor_name, s.zip_code, s.employer
+            FROM staging_contribution s
+            JOIN contribution c ON c.source = s.source AND c.source_record_id = s.sub_id
+            ORDER BY c.id
+        """.trimIndent()
     }
 
     /**
-     * Runs the full dedup job: clear → stream+group → write, wrapped in a
-     * single transaction.
+     * Runs the full dedup job: clear → pass 1 (stream + insert donors) →
+     * pass 2 (stream + write links), all wrapped in a single transaction on
+     * the write connection.
      *
      * On any exception the transaction is rolled back, leaving the DB in the
      * same state it was before the run started.
@@ -85,37 +125,52 @@ class DedupRunner(
      * @return summary counts for the completed run
      */
     fun run(): DedupSummary {
-        dbConfig.openConnection().use { connection ->
-            connection.autoCommit = false
-            try {
-                out.appendLine("dedup: clearing previous results")
-                clearExistingDedup(connection)
+        val writeConnection = dbConfig.openConnection()
+        writeConnection.autoCommit = false
+        val shutdownHook = Thread { closeConnectionQuietly(writeConnection) }
+        Runtime.getRuntime().addShutdownHook(shutdownHook)
+        try {
+            out.appendLine("dedup: clearing previous results")
+            clearExistingDedup(writeConnection)
 
-                out.appendLine("dedup: loading and grouping staging rows")
-                val (groups, skipped) = streamIntoGroups(connection)
-                out.appendLine("dedup: ${groups.size} donor groups, $skipped rows skipped (blank name or zip)")
-                logger.debug { "dedup: ${groups.size} donor groups, $skipped skipped" }
+            out.appendLine("dedup: pass 1 — streaming staging rows and inserting donor records")
+            val (keyToDonorId, skipped) = streamDistinctDonors(writeConnection)
+            out.appendLine("dedup: ${keyToDonorId.size} distinct donors, $skipped rows skipped (blank name or zip)")
+            logger.debug { "dedup pass 1 complete: ${keyToDonorId.size} donors, $skipped skipped" }
 
-                var donorsCreated = 0L
-                var linksCreated = 0L
-                for ((key, contributionIds) in groups) {
-                    val donorId = insertDonor(connection, key)
-                    val matchRule = if (key.employer.isEmpty()) MATCH_RULE_NO_EMPLOYER else MATCH_RULE_EMPLOYER
-                    insertDonorLinks(connection, donorId, contributionIds, matchRule)
-                    updateContributionDonorIds(connection, donorId, contributionIds)
-                    donorsCreated++
-                    linksCreated += contributionIds.size
-                }
+            out.appendLine("dedup: pass 2 — streaming staging rows and writing donor links")
+            val linksCreated = streamAndWriteLinks(writeConnection, keyToDonorId)
 
-                connection.commit()
-                out.appendLine("dedup: $donorsCreated donors created, $linksCreated links written, $skipped skipped")
-                return DedupSummary(donorsCreated, linksCreated, skipped)
-            } catch (e: Exception) {
+            writeConnection.commit()
+            val donorsCreated = keyToDonorId.size.toLong()
+            out.appendLine("dedup: $donorsCreated donors created, $linksCreated links written, $skipped skipped")
+            return DedupSummary(donorsCreated, linksCreated, skipped)
+        } catch (e: Exception) {
+            writeConnection.rollback()
+            throw e
+        } finally {
+            writeConnection.autoCommit = true
+            writeConnection.close()
+            Runtime.getRuntime().removeShutdownHook(shutdownHook)
+        }
+    }
+
+    /**
+     * Closes [connection] and rolls back any open transaction, swallowing all
+     * exceptions. Invoked from the JVM shutdown hook so the write connection is
+     * not left open — and holding locks — when the process is terminated mid-run
+     * (e.g. IntelliJ Stop button / SIGTERM).
+     *
+     * @param connection the write connection opened in [run]
+     */
+    private fun closeConnectionQuietly(connection: Connection) {
+        try {
+            if (!connection.isClosed) {
                 connection.rollback()
-                throw e
-            } finally {
-                connection.autoCommit = true
+                connection.close()
             }
+        } catch (_: Exception) {
+            // best-effort on shutdown — no useful action available here
         }
     }
 
@@ -128,145 +183,311 @@ class DedupRunner(
      *
      * Runs inside the transaction started by [run]; rolled back on failure.
      *
-     * @param connection an open connection; not closed by this method
+     * @param connection an open write connection; not closed by this method
      */
     private fun clearExistingDedup(connection: Connection) {
-        connection.createStatement().use { statement ->
+        val statement = connection.createStatement()
+        try {
             statement.execute("DELETE FROM donor_link")
             statement.execute("UPDATE contribution SET donor_id = NULL")
             statement.execute("DELETE FROM donor")
+        } finally {
+            statement.close()
         }
     }
 
     /**
-     * Streams the staging+contribution join result and builds the donor groups
-     * map in a single pass, without materializing the full row list in memory
-     * (PR-203: avoids OOM on 50–80M row FEC dataset).
+     * Pass 1: counts total contributions for progress display, then streams
+     * every staging row and inserts one `donor` row the first time each
+     * normalized [DonorKey] is encountered.
      *
-     * Deduplicates by `contribution.id` — if `staging_contribution` has
-     * multiple rows for the same `(source, sub_id)` (accumulated from repeated
-     * API ingest runs), only the first one encountered per `contribution.id`
-     * contributes to the grouping (PR-202).
+     * Uses a dedicated read-only connection for streaming so the write
+     * connection (which holds the open transaction) is never blocked by an
+     * active streaming `ResultSet` (PR-207).
      *
-     * Rows where name or zip5 cannot be normalized are silently excluded;
-     * their count is returned as the second element of the pair.
+     * Rows are ordered by `contribution.id`; consecutive rows with the same id
+     * are staging duplicates and all but the first are skipped (PR-202).
      *
-     * @param connection an open connection; not closed by this method
-     * @return pair of (donor-key → contribution-id list, skipped-row count)
+     * The INSERT statement for `donor` rows is prepared once here and reused
+     * across all [DONOR_BATCH_SIZE]-row batches to eliminate per-row prepare
+     * overhead (PR-208).
+     *
+     * @param writeConnection the transactional connection on which `donor` rows
+     *   are inserted; not closed by this method
+     * @return pair of (DonorKey → donor.id map, count of skipped contributions)
      */
-    private fun streamIntoGroups(
-        connection: Connection,
-    ): Pair<Map<DonorKey, MutableList<Long>>, Long> {
-        val sql = """
-            SELECT c.id, s.contributor_name, s.zip_code, s.employer
-            FROM staging_contribution s
-            JOIN contribution c ON c.source = s.source AND c.source_record_id = s.sub_id
-        """.trimIndent()
+    private fun streamDistinctDonors(writeConnection: Connection): Pair<Map<DonorKey, Long>, Long> {
+        val readConnection = dbConfig.openStreamingConnection()
+        val insertStatement = writeConnection.prepareStatement(
+            "INSERT INTO donor (canonical_name, employer, zip5) VALUES (?, ?, ?)",
+            Statement.RETURN_GENERATED_KEYS,
+        )
+        try {
+            val totalRows = countContributions(readConnection)
+            out.appendLine("dedup pass 1: $totalRows total contributions")
+            logger.debug { "dedup pass 1: totalRows=$totalRows" }
 
-        val groups = mutableMapOf<DonorKey, MutableList<Long>>()
-        val seenIds = mutableSetOf<Long>()
+            val readStatement = readConnection.prepareStatement(
+                STAGING_QUERY, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY,
+            )
+            readStatement.fetchSize = Int.MIN_VALUE // activates MySQL row-at-a-time streaming
+            val rs = readStatement.executeQuery()
+
+            try {
+                return drainDonorRows(rs, insertStatement, totalRows)
+            } finally {
+                rs.close()
+                readStatement.close()
+            }
+        } finally {
+            readConnection.close()
+            insertStatement.close()
+        }
+    }
+
+    /**
+     * Returns the count of rows in `contribution`, used as the denominator for
+     * pass 1 progress percentage. This is a fast primary-key scan; the result
+     * is used for display only and does not need to exactly match the streaming
+     * query's deduplicated row count.
+     *
+     * @param connection an open read connection; not closed by this method
+     * @return number of rows in `contribution`
+     */
+    private fun countContributions(connection: Connection): Long {
+        val statement = connection.createStatement()
+        try {
+            val rs = statement.executeQuery("SELECT COUNT(*) FROM contribution")
+            try {
+                rs.next()
+                return rs.getLong(1)
+            } finally {
+                rs.close()
+            }
+        } finally {
+            statement.close()
+        }
+    }
+
+    /**
+     * Reads every row from [rs], inserts `donor` rows in batches of
+     * [DONOR_BATCH_SIZE] via [insertStatement], and returns the complete
+     * key→id map alongside the count of skipped contributions (PR-208).
+     *
+     * Progress is logged to [out] and [logger] every [PROGRESS_LOG_INTERVAL]
+     * rows, showing record number, total, percentage, donors found, and skipped.
+     *
+     * Separated from [streamDistinctDonors] to keep resource setup and row
+     * processing in distinct methods.
+     *
+     * @param rs open streaming `ResultSet` from the staging query
+     * @param insertStatement prepared `INSERT INTO donor` statement, reused across all batches
+     * @param totalRows total contribution count used as progress percentage denominator
+     * @return pair of (DonorKey → donor.id map, skipped-row count)
+     */
+    private fun drainDonorRows(
+        rs: ResultSet,
+        insertStatement: java.sql.PreparedStatement,
+        totalRows: Long,
+    ): Pair<Map<DonorKey, Long>, Long> {
+        val keyToDonorId = mutableMapOf<DonorKey, Long>()
+        val pendingKeys = mutableListOf<DonorKey>()
+        // Tracks keys queued in the current batch but not yet flushed into keyToDonorId,
+        // so that two contributions with the same key within the same batch are not both inserted.
+        val pendingKeySet = mutableSetOf<DonorKey>()
         var skipped = 0L
+        var rowsProcessed = 0L
+        var previousId = Long.MIN_VALUE
+        var pendingBatch = 0
 
-        connection.prepareStatement(sql).use { statement ->
-            statement.executeQuery().use { rs ->
-                while (rs.next()) {
-                    val contributionId = rs.getLong(1)
-                    if (!seenIds.add(contributionId)) continue
+        while (rs.next()) {
+            val contributionId = rs.getLong(1)
+            // ORDER BY c.id puts all staging rows for the same contribution
+            // consecutively; skip all but the first (PR-202).
+            if (contributionId == previousId) continue
+            previousId = contributionId
+            rowsProcessed++
 
-                    val name = DonorNormalizer.parseName(rs.getString(2))
-                    val zip5 = DonorNormalizer.normalizeZip(rs.getString(3))
+            if (rowsProcessed % PROGRESS_LOG_INTERVAL == 0L) {
+                val pct = if (totalRows > 0) rowsProcessed * 100 / totalRows else 0
+                logger.debug { "dedup pass 1: record $rowsProcessed / $totalRows ($pct%), ${keyToDonorId.size} donors, $skipped skipped" }
+            }
 
-                    if (name == null || zip5 == null) {
-                        skipped++
-                        continue
-                    }
+            val name = DonorNormalizer.parseName(rs.getString(2))
+            val zip5 = DonorNormalizer.normalizeZip(rs.getString(3))
 
-                    val employer = DonorNormalizer.normalizeEmployer(rs.getString(4)) ?: ""
-                    val key = DonorKey(name.lastName, name.firstName, zip5, employer)
+            if (name == null || zip5 == null) {
+                skipped++
+                continue
+            }
 
-                    if (!groups.containsKey(key)) groups[key] = mutableListOf()
-                    groups[key]!!.add(contributionId)
+            val employer = DonorNormalizer.normalizeEmployer(rs.getString(4)) ?: ""
+            val key = DonorKey(name.lastName, name.firstName, zip5, employer)
+
+            if (!keyToDonorId.containsKey(key) && !pendingKeySet.contains(key)) {
+                val canonicalName = if (key.firstName.isEmpty()) key.lastName else "${key.lastName}, ${key.firstName}"
+                insertStatement.setString(1, canonicalName)
+                insertStatement.setString(2, if (key.employer.isEmpty()) null else key.employer)
+                insertStatement.setString(3, key.zip5)
+                insertStatement.addBatch()
+                pendingKeys.add(key)
+                pendingKeySet.add(key)
+                pendingBatch++
+
+                if (pendingBatch >= DONOR_BATCH_SIZE) {
+                    flushDonorBatch(insertStatement, pendingKeys, keyToDonorId)
+                    pendingKeys.clear()
+                    pendingKeySet.clear()
+                    pendingBatch = 0
                 }
             }
         }
-        return Pair(groups, skipped)
+
+        if (pendingBatch > 0) {
+            flushDonorBatch(insertStatement, pendingKeys, keyToDonorId)
+        }
+
+        return Pair(keyToDonorId, skipped)
     }
 
     /**
-     * Inserts one `donor` row for [key] and returns its auto-increment id.
-     * The canonical_name is stored as `"LAST, FIRST"` (or just `"LAST"` when
-     * the first name is empty).
+     * Executes the buffered `donor` INSERT batch and maps each generated id back
+     * to its [DonorKey] in [keyToDonorId].
      *
-     * @param connection an open connection; not closed by this method
-     * @param key the normalized donor key for this group
-     * @return the generated donor.id
+     * MySQL's Connector/J returns generated keys in insertion order after
+     * [executeBatch], so zipping [pendingKeys] with the key ResultSet is correct.
+     *
+     * @param insertStatement the prepared INSERT statement with a pending batch
+     * @param pendingKeys ordered list of [DonorKey] values in the current batch;
+     *   must match the order rows were added via `addBatch`
+     * @param keyToDonorId accumulator updated with the newly assigned `donor.id` values
      */
-    private fun insertDonor(connection: Connection, key: DonorKey): Long {
-        val canonicalName = if (key.firstName.isEmpty()) key.lastName else "${key.lastName}, ${key.firstName}"
-        connection.prepareStatement(
-            "INSERT INTO donor (canonical_name, employer, zip5) VALUES (?, ?, ?)",
-            Statement.RETURN_GENERATED_KEYS,
-        ).use { statement ->
-            statement.setString(1, canonicalName)
-            statement.setString(2, if (key.employer.isEmpty()) null else key.employer)
-            statement.setString(3, key.zip5)
-            statement.executeUpdate()
-            statement.generatedKeys.use { keys ->
-                check(keys.next()) { "no generated key for donor" }
-                return keys.getLong(1)
+    private fun flushDonorBatch(
+        insertStatement: java.sql.PreparedStatement,
+        pendingKeys: List<DonorKey>,
+        keyToDonorId: MutableMap<DonorKey, Long>,
+    ) {
+        insertStatement.executeBatch()
+        val generatedKeys = insertStatement.generatedKeys
+        try {
+            var index = 0
+            while (generatedKeys.next()) {
+                keyToDonorId[pendingKeys[index]] = generatedKeys.getLong(1)
+                index++
             }
+            check(index == pendingKeys.size) { "generated key count $index != batch size ${pendingKeys.size}" }
+        } finally {
+            generatedKeys.close()
         }
     }
 
     /**
-     * Batch-inserts `donor_link` rows for all [contributionIds] in a single
-     * prepared statement, recording which [matchRule] caused the grouping.
+     * Pass 2: streams every staging row, looks up the `donor.id` by normalized
+     * key, and batch-writes `donor_link` rows and `contribution.donor_id`
+     * updates to [writeConnection].
      *
-     * @param connection an open connection; not closed by this method
-     * @param donorId the donor these contributions belong to
-     * @param contributionIds the canonical contribution.id values in this group
-     * @param matchRule label for the rule that fired (stored for audit)
+     * Uses a second dedicated read-only connection so the streaming `ResultSet`
+     * does not block the write connection (PR-207).
+     *
+     * Rows with no entry in [keyToDonorId] (blank name or zip) are silently
+     * skipped — their `contribution.donor_id` remains NULL, consistent with
+     * pass 1.
+     *
+     * Batches are flushed every [LINK_BATCH_SIZE] rows to bound memory use and
+     * keep the transaction size manageable.
+     *
+     * @param writeConnection the transactional connection for `donor_link` inserts
+     *   and `contribution` updates; not closed by this method
+     * @param keyToDonorId map produced by [streamDistinctDonors]
+     * @return count of `donor_link` rows inserted
      */
-    private fun insertDonorLinks(
-        connection: Connection,
-        donorId: Long,
-        contributionIds: List<Long>,
-        matchRule: String,
-    ) {
-        connection.prepareStatement(
+    private fun streamAndWriteLinks(writeConnection: Connection, keyToDonorId: Map<DonorKey, Long>): Long {
+        val linkStatement = writeConnection.prepareStatement(
             "INSERT INTO donor_link (donor_id, contribution_id, match_rule) VALUES (?, ?, ?)",
-        ).use { statement ->
-            for (contributionId in contributionIds) {
-                statement.setLong(1, donorId)
-                statement.setLong(2, contributionId)
-                statement.setString(3, matchRule)
-                statement.addBatch()
-            }
-            statement.executeBatch()
+        )
+        val updateStatement = writeConnection.prepareStatement(
+            "UPDATE contribution SET donor_id = ? WHERE id = ?",
+        )
+        val readConnection = dbConfig.openStreamingConnection()
+        val readStatement = readConnection.prepareStatement(
+            STAGING_QUERY, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY,
+        )
+        readStatement.fetchSize = Int.MIN_VALUE // activates MySQL row-at-a-time streaming
+        val rs = readStatement.executeQuery()
+
+        try {
+            return drainLinkRows(rs, keyToDonorId, linkStatement, updateStatement)
+        } finally {
+            rs.close()
+            readStatement.close()
+            readConnection.close()
+            linkStatement.close()
+            updateStatement.close()
         }
     }
 
     /**
-     * Batch-updates `contribution.donor_id` for all [contributionIds].
+     * Reads every row from [rs] and batch-writes one `donor_link` insert and
+     * one `contribution.donor_id` update per unique contribution.
      *
-     * @param connection an open connection; not closed by this method
-     * @param donorId the donor id to stamp onto each contribution
-     * @param contributionIds the contribution rows to update
+     * Separated from [streamAndWriteLinks] to keep resource setup and row
+     * processing in distinct methods.
+     *
+     * @param rs open streaming `ResultSet` from the staging query
+     * @param keyToDonorId map of normalized key → donor.id
+     * @param linkStatement open `PreparedStatement` for `donor_link` inserts
+     * @param updateStatement open `PreparedStatement` for `contribution` updates
+     * @return count of rows added to [linkStatement] batch (= `donor_link` rows written)
      */
-    private fun updateContributionDonorIds(
-        connection: Connection,
-        donorId: Long,
-        contributionIds: List<Long>,
-    ) {
-        connection.prepareStatement(
-            "UPDATE contribution SET donor_id = ? WHERE id = ?",
-        ).use { statement ->
-            for (contributionId in contributionIds) {
-                statement.setLong(1, donorId)
-                statement.setLong(2, contributionId)
-                statement.addBatch()
+    private fun drainLinkRows(
+        rs: ResultSet,
+        keyToDonorId: Map<DonorKey, Long>,
+        linkStatement: java.sql.PreparedStatement,
+        updateStatement: java.sql.PreparedStatement,
+    ): Long {
+        var linksCreated = 0L
+        var previousId = Long.MIN_VALUE
+        var pendingBatch = 0
+
+        while (rs.next()) {
+            val contributionId = rs.getLong(1)
+            if (contributionId == previousId) continue
+            previousId = contributionId
+
+            val name = DonorNormalizer.parseName(rs.getString(2))
+            val zip5 = DonorNormalizer.normalizeZip(rs.getString(3))
+            if (name == null || zip5 == null) continue
+
+            val employer = DonorNormalizer.normalizeEmployer(rs.getString(4)) ?: ""
+            val key = DonorKey(name.lastName, name.firstName, zip5, employer)
+            val donorId = keyToDonorId[key] ?: continue
+
+            val matchRule = if (key.employer.isEmpty()) MATCH_RULE_NO_EMPLOYER else MATCH_RULE_EMPLOYER
+
+            linkStatement.setLong(1, donorId)
+            linkStatement.setLong(2, contributionId)
+            linkStatement.setString(3, matchRule)
+            linkStatement.addBatch()
+
+            updateStatement.setLong(1, donorId)
+            updateStatement.setLong(2, contributionId)
+            updateStatement.addBatch()
+
+            pendingBatch++
+            linksCreated++
+
+            if (pendingBatch >= LINK_BATCH_SIZE) {
+                linkStatement.executeBatch()
+                updateStatement.executeBatch()
+                pendingBatch = 0
             }
-            statement.executeBatch()
         }
+
+        if (pendingBatch > 0) {
+            linkStatement.executeBatch()
+            updateStatement.executeBatch()
+        }
+
+        return linksCreated
     }
 }

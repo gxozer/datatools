@@ -32,14 +32,42 @@ data class DbConfig(
         get() = url + (if ('?' in url) "&" else "?") + "allowLoadLocalInfile=true"
 
     /**
+     * The JDBC URL with `netTimeoutForStreamingResults=3600` appended.
+     *
+     * When `fetchSize = Int.MIN_VALUE` activates MySQL row-at-a-time streaming,
+     * Connector/J issues `SET net_write_timeout = N` on the session, where N is
+     * `netTimeoutForStreamingResults` (default: 600 s). If a batch write on the
+     * write connection blocks the `rs.next()` loop for longer than that, MySQL
+     * closes the streaming socket and `rs.close()` throws "Socket is closed".
+     * 3 600 s (1 h) gives dedup batch writes ample headroom (PR-208).
+     *
+     * Use this URL **only** for read-only streaming connections in dedup passes.
+     */
+    val urlForStreaming: String
+        get() = url + (if ('?' in url) "&" else "?") + "netTimeoutForStreamingResults=3600"
+
+    /**
      * Opens a standard JDBC connection using [url].
      *
      * For bulk loads that need `LOAD DATA LOCAL INFILE` use [urlWithLocalInfile]
      * directly (see [com.campaignfinances.pipeline.ingestion.FecBulkAdapter]).
+     * For row-at-a-time streaming ResultSets use [openStreamingConnection].
      *
      * @return a new open [Connection]
      */
     fun openConnection(): Connection = DriverManager.getConnection(url, user, password)
+
+    /**
+     * Opens a JDBC connection suitable for row-at-a-time streaming ResultSets
+     * (`fetchSize = Int.MIN_VALUE`).
+     *
+     * Uses [urlForStreaming] to raise `net_write_timeout` to 3 600 s so MySQL
+     * does not close the socket if a batch write on the write connection delays
+     * the next `rs.next()` call beyond the default 600 s limit.
+     *
+     * @return a new open [Connection]
+     */
+    fun openStreamingConnection(): Connection = DriverManager.getConnection(urlForStreaming, user, password)
 
     companion object {
         /**

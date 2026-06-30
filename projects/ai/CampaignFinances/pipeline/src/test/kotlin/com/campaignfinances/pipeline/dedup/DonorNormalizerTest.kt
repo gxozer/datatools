@@ -98,6 +98,13 @@ class DonorNormalizerTest {
         assertNull(DonorNormalizer.parseName("---, JOHN"))
     }
 
+    @Test
+    fun `parseName does not skip contributor whose last name equals a suffix token`() {
+        // "SR" is in NAME_SUFFIXES, but if it is the ONLY last-name token it must be
+        // kept — the contributor should not be silently excluded (PR-204).
+        assertEquals(ParsedName("SR", "JOHN"), DonorNormalizer.parseName("SR, JOHN"))
+    }
+
     // ── Near-miss: must NOT produce the same ParsedName ─────────────────────
 
     @Test

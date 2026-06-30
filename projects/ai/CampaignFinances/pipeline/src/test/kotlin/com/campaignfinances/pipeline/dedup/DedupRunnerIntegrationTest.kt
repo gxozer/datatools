@@ -223,6 +223,22 @@ class DedupRunnerIntegrationTest {
         assertEquals("SMITH, JOHN", canonicalName)
     }
 
+    // ── Duplicate staging rows (PR-202) ──────────────────────────────────────
+
+    @Test
+    fun `duplicate staging rows for same sub_id produce exactly one donor_link row`() {
+        // Simulate two FecApiAdapter runs inserting the same staging row
+        insertStagingOnly("111", "SMITH, JOHN", "90210", "ACME")
+        insertContributionOnly("111")
+        insertStagingOnly("111", "SMITH, JOHN", "90210", "ACME") // duplicate staging
+
+        val summary = DedupRunner(config).run()
+
+        assertEquals(1, summary.donorsCreated)
+        assertEquals(1, summary.linksCreated)
+        assertEquals(1, connection.queryLong("SELECT COUNT(*) FROM donor_link"))
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
@@ -244,17 +260,27 @@ class DedupRunnerIntegrationTest {
 
     /**
      * Inserts both a `staging_contribution` row and a matching `contribution`
-     * row (joined by source + sub_id/source_record_id), which is the minimum
-     * setup [DedupRunner.loadStagingRows] needs to include a row.
+     * row (joined by source + sub_id/source_record_id), the minimum setup the
+     * runner needs to include a row.
      *
-     * The source value is fixed to `"test"` for all rows in this test class.
-     *
-     * @param subId the FEC sub_id / source_record_id used as the join key
-     * @param contributorName the raw contributor name (may be null)
-     * @param zipCode the raw zip code (may be null)
-     * @param employer the raw employer (may be null)
+     * Source is fixed to `"test"` for all rows in this test class.
      */
     private fun insertContributionWithStaging(
+        subId: String,
+        contributorName: String?,
+        zipCode: String?,
+        employer: String?,
+    ) {
+        insertStagingOnly(subId, contributorName, zipCode, employer)
+        insertContributionOnly(subId)
+    }
+
+    /**
+     * Inserts only a `staging_contribution` row (no canonical contribution).
+     * Use [insertContributionOnly] separately when you need to control how many
+     * staging rows exist per canonical contribution (duplicate-staging tests).
+     */
+    private fun insertStagingOnly(
         subId: String,
         contributorName: String?,
         zipCode: String?,
@@ -273,7 +299,12 @@ class DedupRunnerIntegrationTest {
             statement.setString(4, employer)
             statement.executeUpdate()
         }
+    }
 
+    /**
+     * Inserts only a canonical `contribution` row.
+     */
+    private fun insertContributionOnly(subId: String) {
         connection.prepareStatement(
             """
             INSERT INTO contribution
