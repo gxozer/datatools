@@ -125,7 +125,10 @@ class DedupRunner(
      * @return summary counts for the completed run
      */
     fun run(): DedupSummary {
-        val writeConnection = dbConfig.openConnection()
+        // Long-running connection with raised MySQL session timeouts (wait_timeout,
+        // net_write_timeout = 24 h) so the server does not kill the connection
+        // mid-batch during pass 2 (PR-156 failure post-mortem).
+        val writeConnection = dbConfig.openLongRunningConnection()
         writeConnection.autoCommit = false
         val shutdownHook = Thread { closeConnectionQuietly(writeConnection) }
         Runtime.getRuntime().addShutdownHook(shutdownHook)
@@ -146,10 +149,17 @@ class DedupRunner(
             out.appendLine("dedup: $donorsCreated donors created, $linksCreated links written, $skipped skipped")
             return DedupSummary(donorsCreated, linksCreated, skipped)
         } catch (e: Exception) {
-            writeConnection.rollback()
+            try {
+                writeConnection.rollback()
+            } catch (rollbackEx: Exception) {
+                // swallow — the connection may already be closed (network drop, shutdown hook race);
+                // log so the real cause (e) is still visible
+                logger.warn(rollbackEx) { "rollback failed after dedup error; original error follows" }
+            }
             throw e
         } finally {
-            writeConnection.autoCommit = true
+            // autoCommit = true is intentionally omitted — the connection is being closed immediately
+            // and setting it on an already-closed connection would throw, masking the original error.
             writeConnection.close()
             Runtime.getRuntime().removeShutdownHook(shutdownHook)
         }

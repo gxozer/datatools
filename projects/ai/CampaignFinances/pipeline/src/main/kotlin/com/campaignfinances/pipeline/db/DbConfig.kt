@@ -32,6 +32,33 @@ data class DbConfig(
         get() = url + (if ('?' in url) "&" else "?") + "allowLoadLocalInfile=true"
 
     /**
+     * The JDBC URL with MySQL session variables that prevent the server from
+     * closing a long-running write connection mid-batch (PR-156 pass 2).
+     *
+     * Dedup pass 2 holds an open transaction for hours while batch-writing
+     * 25M rows. Without overrides, MySQL's default `wait_timeout=28800s` (8 h)
+     * and `net_write_timeout=60s` can kill the connection mid-run. Setting them
+     * to 86 400 s (24 h) gives the write connection safe headroom.
+     *
+     * Use this URL **only** for the dedup write connection. Normal connections
+     * should use [url] directly.
+     */
+    val urlForLongRunningWrite: String
+        get() = url + (if ('?' in url) "&" else "?") +
+            "sessionVariables=wait_timeout=86400,interactive_timeout=86400,net_write_timeout=86400"
+
+    /**
+     * Opens a JDBC connection suitable for long-running batched writes (hours).
+     *
+     * Uses [urlForLongRunningWrite] to raise MySQL session-level timeouts to
+     * 24 h so the server does not close the write connection mid-batch during
+     * dedup pass 2.
+     *
+     * @return a new open [Connection]
+     */
+    fun openLongRunningConnection(): Connection = DriverManager.getConnection(urlForLongRunningWrite, user, password)
+
+    /**
      * The JDBC URL with `netTimeoutForStreamingResults=3600` appended.
      *
      * When `fetchSize = Int.MIN_VALUE` activates MySQL row-at-a-time streaming,
