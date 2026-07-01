@@ -77,7 +77,8 @@ class IngestCommand(
             cycle = parsed
         }
 
-        val localDir = options["dir"]?.let(Path::of)
+        val rawDir = options["dir"]
+        val localDir: Path? = if (rawDir != null) Path.of(rawDir) else null
 
         val source = options["source"] ?: return usageError("missing required --source=fec-bulk|fec-api")
         val makeRunner = runners[source] ?: return usageError("unknown --source '$source' (expected fec-bulk or fec-api)")

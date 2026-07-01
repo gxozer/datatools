@@ -38,6 +38,16 @@ dependencies {
 
 application {
     mainClass.set("com.campaignfinances.pipeline.MainKt")
+    // Dedup loads all donor-group contribution IDs into memory; 50–80M FEC rows
+    // require ~4–6 GB. Override with JAVA_TOOL_OPTIONS=-Xmx<n>g if the machine
+    // has less than 8 GB available.
+    applicationDefaultJvmArgs = listOf("-Xmx6g")
+}
+
+// applicationDefaultJvmArgs only applies to the `run` task; IntelliJ's debug
+// task is a separate auto-generated JavaExec that won't inherit it without this.
+tasks.withType<JavaExec> {
+    jvmArgs("-Xmx6g")
 }
 
 // The Flyway Gradle plugin (11.8.2) is incompatible with Gradle 9, so migrations

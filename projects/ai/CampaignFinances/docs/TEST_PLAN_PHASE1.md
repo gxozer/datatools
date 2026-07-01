@@ -3,7 +3,7 @@
 **Epic:** [PR-144](https://mgozer.atlassian.net/browse/PR-144)
 **Parent docs:** [TDS_PHASE1.md](TDS_PHASE1.md) §9 (testing strategy, brief), [PROJECT_PLAN.md](PROJECT_PLAN.md)
 **Status:** Living document — updated as each Phase 1 ticket lands
-**Last updated:** 2026-06-26 (PR-155 smoke-test fixes: date format, two_year_transaction_period, watermark fallback, logging)
+**Last updated:** 2026-06-26 (PR-156 donor de-duplication: DonorNormalizerTest + DedupRunnerIntegrationTest)
 
 This is the operational expansion of [TDS_PHASE1.md](TDS_PHASE1.md) §9: not just the testing *strategy* (unit/integration/reconciliation, stated briefly there), but a concrete inventory of what test coverage exists today, what's planned per ticket, and the gaps tracked between them. Phase 1 is the only phase implemented so far ([PROJECT_PLAN.md](PROJECT_PLAN.md) defines 7 phases total); this document will need a Phase 2 counterpart once that phase is designed.
 
@@ -18,12 +18,12 @@ This is the operational expansion of [TDS_PHASE1.md](TDS_PHASE1.md) §9: not jus
 | **End-to-end (in-process)** | Every pipeline stage chained together (ingest → dedup → summary rebuild → reconcile), still calling Kotlin classes in-process. | Not yet present — planned in **PR-159**. |
 | **End-to-end (subprocess)** | The actual CLI run as a separate process exactly as a user runs it, real env vars, real exit codes. | `CliSubprocessTest` (PR-174) — spawns `java -cp ... MainKt migrate`/`ingest` as a genuine child process against a real Testcontainers MySQL via `CF_DB_*` env vars. Distinct from PR-159's scope, which stays in-process per its ticket description. |
 
-## 2. Current test inventory (as of PR-155)
+## 2. Current test inventory (as of PR-156)
 
 | File | Type | Covers |
 |---|---|---|
 | `cli/CliTest.kt` | Unit | `Cli` dispatch: routes to the named command, usage-on-no-args, unknown-command exit code |
-| `cli/StubCommandsTest.kt` | Unit | `DedupCommand`/`ReconcileCommand` stubs exit 2 with "not implemented" — guards against accidentally shipping a stub as if it were real |
+| `cli/StubCommandsTest.kt` | Unit | `ReconcileCommand` stub exits 2 with "not implemented" — guards against accidentally shipping a stub as if it were real. (`DedupCommand` test removed when PR-156 replaced the stub with a real implementation.) |
 | `cli/IngestCommandTest.kt` | Unit (fake collaborator) | `IngestCommand` option parsing (`--source`, `--cycle`, `--dir`) and per-source dispatch (`fec-bulk` vs `fec-api` route to independent fake runners) against **fakes** — no real DB, no real HTTP |
 | `cli/IngestCommandComponentTest.kt` | Component | The production `IngestCommand(dbConfig)` constructor against a real `FecBulkAdapter` + Testcontainers MySQL: real exit code, real printed summary line, real fixture-derived counts (PR-173) |
 | `db/DbConfigTest.kt` | Unit | `DbConfig.fromEnv()` defaults and env-var overrides |
@@ -36,6 +36,8 @@ This is the operational expansion of [TDS_PHASE1.md](TDS_PHASE1.md) §9: not jus
 | `ingestion/FecBulkIngestIntegrationTest.kt` | Integration | Full `FecBulkAdapter.ingest()` against fixture files: staging load + canonical load + `ingest_run.row_counts`, end-to-end idempotency on re-run |
 | `ingestion/FecApiAdapterIntegrationTest.kt` | Integration | Full `FecApiAdapter.ingest()` against mocked HTTP + Testcontainers MySQL: staging + canonical population, watermark falling back to cycle-start on the first run, same-source idempotency, and the watermark advancing to the prior run's `finished_at` on a second run (PR-155). Note: watermark now also falls back to latest `fec-bulk` run before cycle start (PR-193) — not yet covered by automated test |
 | `ingestion/TestDbSupport.kt` | (test helper, not a test) | Shared `Connection.truncateAllPipelineTables()` / `queryLong()` / `queryString()` used by the Testcontainers-backed tests above |
+| `dedup/DonorNormalizerTest.kt` | Unit | 28 table-driven tests for `DonorNormalizer`: name splitting (LAST, FIRST MIDDLE), suffix stripping (JR/SR/II/III/IV/ESQ), punctuation handling, all employer aliases (SELF variants, NOT EMPLOYED variants, N/A→null), zip extraction (9-digit, hyphenated), blank-input null returns, and near-miss cases (different last/first name, zip, employer must NOT produce equal keys) |
+| `dedup/DedupRunnerIntegrationTest.kt` | Integration | 14 Testcontainers MySQL integration tests: same-key merging, blank-employer grouping, suffix normalization merges, employer alias merges, near-misses (different zip, different named employer, blank vs. named employer, different last name), skipping (blank name, missing zip), audit completeness (`donor_id` count = `donor_link` count), re-run determinism (identical results on second run), `canonical_name` format |
 
 ## 3. Coverage by Phase 1 ticket
 
@@ -46,7 +48,7 @@ This is the operational expansion of [TDS_PHASE1.md](TDS_PHASE1.md) §9: not jus
 | **PR-154 normalize/load** | Done | Table-driven normalization + attribution-logic unit tests; canonical population + idempotency | `CanonicalLoaderTest`, `FecBulkIngestIntegrationTest` (canonical half) — complete; follow-up gaps from review closed via PR-171–PR-174 (§4) |
 | **PR-155 FEC API adapter** | Done | Mocked-HTTP unit tests (response parsing, pagination, watermark logic), cross-source idempotency integration test | `FecApiClientTest`, `FecApiAdapterIntegrationTest`, `IngestCommandTest` (fec-api dispatch) — complete; "cross-source idempotency" scoped to same-source (fec-api-on-fec-api) only, see §4 |
 | **PR-193 watermark fec-bulk fallback** | Done | Integration test: first `fec-api` run after a `fec-bulk` load watermarks from bulk's `finished_at`, not cycle start | Not yet — gap noted in `FecApiAdapterIntegrationTest` row above |
-| PR-156 donor dedup | Not started | Table-driven normalization rules **and near-miss cases that must NOT merge**; audit-completeness check (`donor_link` count = linked-contribution count); determinism (re-run = identical) | None yet — depends on PR-154's `normalized_name`/`zip5` columns, which exist |
+| **PR-156 donor dedup** | Done | Table-driven normalization rules **and near-miss cases that must NOT merge**; audit-completeness check (`donor_link` count = linked-contribution count); determinism (re-run = identical) | `DonorNormalizerTest` (28 unit), `DedupRunnerIntegrationTest` (14 integration) — complete |
 | PR-157 ranking tables | Not started | Ranking/breakdown integration tests; concurrent-read-during-rebuild test (atomic `RENAME TABLE` swap) | None yet |
 | PR-158 reconciliation | Not started | Comparison/tolerance unit tests; fixture-based reconciliation test (known inputs → known results) | None yet |
 | **PR-159 e2e suite** | Not started | Cross-stage end-to-end (ingest → dedup → summary rebuild) against curated fixtures with edge cases (malformed rows, dedup near-misses, multi-committee candidates); e2e idempotency (full pipeline twice = identical state) | None yet — explicitly **in-process** per its ticket description, not a subprocess/CLI test (see §4.7) |

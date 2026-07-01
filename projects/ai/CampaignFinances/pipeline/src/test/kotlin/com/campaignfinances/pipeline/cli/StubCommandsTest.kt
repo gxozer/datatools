@@ -14,12 +14,6 @@ class StubCommandsTest {
     }
 
     @Test
-    fun `dedup stub reports not implemented and exits 2`() {
-        val err = StringBuilder()
-        assertStubBehavior(DedupCommand(err), err)
-    }
-
-    @Test
     fun `reconcile stub reports not implemented and exits 2`() {
         val err = StringBuilder()
         assertStubBehavior(ReconcileCommand(err), err)

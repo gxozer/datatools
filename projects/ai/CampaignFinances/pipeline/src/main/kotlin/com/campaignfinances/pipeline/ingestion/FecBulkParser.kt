@@ -138,7 +138,7 @@ object FecBulkParser {
         val amount = fields[14].trim().toBigDecimalOrNull()
             ?: return ParseResult.Bad("invalid TRANSACTION_AMT '${fields[14].trim()}'")
 
-        val date = fields[13].trim().takeIf { it.length == 8 && it.all(Char::isDigit) }
+        val date = parseDateOrNull(fields[13])
 
         return ParseResult.Ok(
             listOf(
@@ -154,6 +154,20 @@ object FecBulkParser {
                 amount.toPlainString(),
             ),
         )
+    }
+
+    /**
+     * Returns [raw] trimmed if it is exactly 8 ASCII digits (the `MMDDYYYY`
+     * format FEC bulk files use), or null if the field is absent or malformed.
+     * A null date is stored as SQL NULL rather than rejecting the row.
+     *
+     * @param raw the raw field value from the pipe-delimited line
+     * @return the trimmed date string, or null if it is not a valid date field
+     */
+    private fun parseDateOrNull(raw: String): String? {
+        val trimmed = raw.trim()
+        if (trimmed.length == 8 && trimmed.all(Char::isDigit)) return trimmed
+        return null
     }
 
     /**

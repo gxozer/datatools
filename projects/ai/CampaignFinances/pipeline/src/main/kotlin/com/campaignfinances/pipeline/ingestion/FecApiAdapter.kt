@@ -212,7 +212,8 @@ class FecApiAdapter(
                 statement.setString(6, result.contributorZip?.clip(9))
                 statement.setString(7, result.contributorEmployer?.clip(38))
                 statement.setString(8, result.contributorOccupation?.clip(38))
-                statement.setString(9, result.contributionReceiptDate?.let(::toStagingDate))
+                val stagingDate = if (result.contributionReceiptDate != null) toStagingDate(result.contributionReceiptDate) else null
+                statement.setString(9, stagingDate)
                 statement.setBigDecimal(10, result.contributionReceiptAmount?.toBigDecimal())
                 statement.setString(11, SOURCE)
                 statement.setLong(12, runId)
